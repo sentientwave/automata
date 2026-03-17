@@ -1,0 +1,275 @@
+<Layouts.flash_group flash={@flash} />
+
+<section class="mx-auto max-w-6xl px-6 py-10">
+  <div class="rounded-box border border-base-300 bg-base-200 p-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-sm uppercase tracking-[0.2em] text-base-content/70">
+          SentientWave Automata
+        </p>
+        <h1 class="mt-2 text-3xl font-bold tracking-tight">LLM Provider Management</h1>
+        <p class="mt-3 text-base text-base-content/80">
+          Configure multiple LLM providers and select which one is default for agent inference.
+        </p>
+      </div>
+      <form action={~p"/logout"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="_method" value="delete" />
+        <button type="submit" class="btn btn-outline btn-sm">Sign Out</button>
+      </form>
+    </div>
+
+    <nav class="mt-5 flex flex-wrap gap-2">
+      <%= for item <- @nav do %>
+        <a
+          href={item.href}
+          class={["btn btn-sm", if(item.active, do: "btn-primary", else: "btn-ghost")]}
+        >
+          {item.label}
+        </a>
+      <% end %>
+    </nav>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-lg font-semibold">Effective Runtime Provider</h2>
+    <div class="mt-3 flex flex-wrap gap-2 text-sm">
+      <span class="badge badge-outline">Name: {@llm.name}</span>
+      <span class="badge badge-outline">Provider: {@llm.provider}</span>
+      <span class="badge badge-outline">Model: {@llm.model}</span>
+      <span class="badge badge-outline">Timeout: {@llm.timeout_seconds}s</span>
+      <span class="badge badge-outline">
+        Token: {if @token_configured?, do: "configured", else: "not set"}
+      </span>
+      <span class="badge badge-outline">
+        Source: {if @persisted?, do: "database", else: "environment"}
+      </span>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-lg font-semibold">Configured Providers</h2>
+    <p class="mt-2 text-sm text-base-content/70">
+      You can keep several providers configured and switch default instantly.
+    </p>
+
+    <div class="mt-4 space-y-4">
+      <%= for provider <- @providers do %>
+        <article class="rounded-box border border-base-300 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-base font-semibold">{provider.name}</h3>
+            <div class="flex flex-wrap gap-2">
+              <span class={[
+                "badge",
+                if(provider.is_default, do: "badge-primary", else: "badge-outline")
+              ]}>
+                {if provider.is_default, do: "Default", else: "Secondary"}
+              </span>
+              <span class={[
+                "badge",
+                if(provider.enabled, do: "badge-success", else: "badge-ghost")
+              ]}>
+                {if provider.enabled, do: "Enabled", else: "Disabled"}
+              </span>
+            </div>
+          </div>
+
+          <form
+            action={~p"/settings/llm/providers/#{provider.id}"}
+            method="post"
+            class="mt-4 grid gap-3 md:grid-cols-2"
+          >
+            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Display Name</span>
+              <input name="llm[name]" class="input input-bordered w-full" value={provider.name} />
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Slug</span>
+              <input name="llm[slug]" class="input input-bordered w-full" value={provider.slug} />
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Provider</span>
+              <select name="llm[provider]" class="select select-bordered w-full">
+                <%= for {label, value} <- @provider_options do %>
+                  <option value={value} selected={provider.provider == value}>{label}</option>
+                <% end %>
+              </select>
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Model</span>
+              <input
+                name="llm[model]"
+                class="input input-bordered w-full"
+                value={provider.model}
+                placeholder="gpt-4o-mini / llama3.1 / openai/gpt-4o-mini"
+              />
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Timeout (seconds)</span>
+              <input
+                name="llm[timeout_seconds]"
+                type="number"
+                min="1"
+                max="3600"
+                class="input input-bordered w-full"
+                value={provider.timeout_seconds || 600}
+              />
+            </label>
+
+            <label class="form-control w-full md:col-span-2">
+              <span class="label-text text-xs">Base URL (optional)</span>
+              <input
+                name="llm[base_url]"
+                class="input input-bordered w-full"
+                value={provider.base_url}
+                placeholder="https://api.openai.com/v1 or http://host.containers.internal:11434"
+              />
+            </label>
+
+            <label class="form-control w-full md:col-span-2">
+              <span class="label-text text-xs">API Token (leave blank to keep existing)</span>
+              <input
+                name="llm[api_token]"
+                type="password"
+                class="input input-bordered w-full"
+                value=""
+              />
+            </label>
+
+            <div class="md:col-span-2 flex flex-wrap gap-4">
+              <label class="label cursor-pointer justify-start gap-2">
+                <input
+                  type="checkbox"
+                  name="llm[enabled]"
+                  value="1"
+                  class="checkbox checkbox-sm"
+                  checked={provider.enabled}
+                />
+                <span class="label-text text-xs">Enabled</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-2">
+                <input
+                  type="checkbox"
+                  name="llm[clear_api_token]"
+                  value="1"
+                  class="checkbox checkbox-sm"
+                />
+                <span class="label-text text-xs">Clear saved token</span>
+              </label>
+            </div>
+
+            <div class="md:col-span-2 flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </div>
+          </form>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <form action={~p"/settings/llm/providers/#{provider.id}/default"} method="post">
+              <input
+                type="hidden"
+                name="_csrf_token"
+                value={Plug.CSRFProtection.get_csrf_token()}
+              />
+              <button type="submit" class="btn btn-outline btn-sm" disabled={provider.is_default}>
+                Set Default
+              </button>
+            </form>
+            <form action={~p"/settings/llm/providers/#{provider.id}"} method="post">
+              <input
+                type="hidden"
+                name="_csrf_token"
+                value={Plug.CSRFProtection.get_csrf_token()}
+              />
+              <input type="hidden" name="_method" value="delete" />
+              <button type="submit" class="btn btn-error btn-outline btn-sm">Delete</button>
+            </form>
+          </div>
+        </article>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-lg font-semibold">Add Provider</h2>
+    <form
+      action={~p"/settings/llm/providers"}
+      method="post"
+      class="mt-4 grid gap-3 md:grid-cols-2"
+    >
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Display Name</span>
+        <input name="llm[name]" class="input input-bordered w-full" placeholder="OpenAI Primary" />
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Slug (optional)</span>
+        <input name="llm[slug]" class="input input-bordered w-full" placeholder="openai-primary" />
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Provider</span>
+        <select name="llm[provider]" class="select select-bordered w-full">
+          <%= for {label, value} <- @provider_options do %>
+            <option value={value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Model</span>
+        <input name="llm[model]" class="input input-bordered w-full" value="local-default" />
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Timeout (seconds)</span>
+        <input
+          name="llm[timeout_seconds]"
+          type="number"
+          min="1"
+          max="3600"
+          class="input input-bordered w-full"
+          value="600"
+        />
+      </label>
+
+      <label class="form-control w-full md:col-span-2">
+        <span class="label-text text-xs">Base URL (optional)</span>
+        <input name="llm[base_url]" class="input input-bordered w-full" />
+      </label>
+
+      <label class="form-control w-full md:col-span-2">
+        <span class="label-text text-xs">API Token (optional)</span>
+        <input name="llm[api_token]" type="password" class="input input-bordered w-full" />
+      </label>
+
+      <div class="md:col-span-2 flex flex-wrap gap-4">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="llm[enabled]"
+            value="1"
+            class="checkbox checkbox-sm"
+            checked
+          />
+          <span class="label-text text-xs">Enabled</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-2">
+          <input type="checkbox" name="llm[is_default]" value="1" class="checkbox checkbox-sm" />
+          <span class="label-text text-xs">Set as default</span>
+        </label>
+      </div>
+
+      <div class="md:col-span-2">
+        <button type="submit" class="btn btn-primary">Add Provider</button>
+      </div>
+    </form>
+  </div>
+</section>

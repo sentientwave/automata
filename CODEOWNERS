@@ -1,0 +1,28 @@
+# Default ownership
+* @sentientwave/core
+
+# Core runtime
+/apps/sentientwave_automata/ @sentientwave/core @sentientwave/agents
+
+# Web and API
+/apps/sentientwave_automata_web/ @sentientwave/core @sentientwave/web
+
+# Deployment and operations
+/deploy/ @sentientwave/platform
+/compose.yaml @sentientwave/platform
+/Containerfile @sentientwave/platform
+/Dockerfile @sentientwave/platform
+
+# Documentation and policy
+/docs/ @sentientwave/docs
+/README.md @sentientwave/docs
+/ROADMAP.md @sentientwave/product
+/PROGRESS.md @sentientwave/product
+/CHANGELOG.md @sentientwave/core
+/RELEASE.md @sentientwave/core @sentientwave/platform
+/LICENSE @sentientwave/legal
+/SECURITY.md @sentientwave/security
+
+# CI and templates
+/.github/ @sentientwave/core @sentientwave/platform
+

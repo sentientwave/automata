@@ -1,0 +1,53 @@
+<Layouts.flash_group flash={@flash} />
+
+<section class="mx-auto max-w-2xl px-6 py-10">
+  <div class="rounded-box border border-base-300 bg-base-100 p-6">
+    <p class="text-sm uppercase tracking-[0.18em] text-base-content/70">SentientWave Automata</p>
+    <h1 class="mt-2 text-2xl font-bold">Your Matrix Access Setup</h1>
+    <p class="mt-2 text-sm text-base-content/70">
+      Follow these steps to sign in and join your collaboration room.
+    </p>
+
+    <div role="alert" class="alert alert-info mt-4 text-sm">
+      <span>Keep this page private. It may contain your temporary credentials.</span>
+    </div>
+
+    <div class="mt-5 space-y-2 rounded-box border border-base-300 bg-base-200 p-4 text-sm">
+      <p><span class="font-semibold">User ID:</span> {@mxid}</p>
+      <p><span class="font-semibold">Password:</span> {@password}</p>
+      <p><span class="font-semibold">Homeserver:</span> {@homeserver_url}</p>
+      <p><span class="font-semibold">Room:</span> {@room_alias}</p>
+    </div>
+
+    <div class="mt-5 space-y-3 text-sm">
+      <p class="font-semibold">Step-by-step:</p>
+      <p>1. Open your Matrix client and choose Sign In.</p>
+      <p>2. Set homeserver to <code>{@homeserver_url}</code>.</p>
+      <p>3. Use user ID <code>{@mxid}</code> and password <code>{@password}</code>.</p>
+      <p>4. After sign in, open the room link below.</p>
+    </div>
+
+    <div class="mt-5 flex flex-wrap gap-2">
+      <%= if @element_login_link do %>
+        <a
+          class="btn btn-primary btn-sm"
+          href={@element_login_link}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open Element Login
+        </a>
+      <% end %>
+      <%= if @room_link do %>
+        <a class="btn btn-outline btn-sm" href={@room_link} target="_blank" rel="noreferrer">
+          Open Room Link
+        </a>
+      <% end %>
+      <%= if @profile_link do %>
+        <a class="btn btn-outline btn-sm" href={@profile_link} target="_blank" rel="noreferrer">
+          Open My Profile Link
+        </a>
+      <% end %>
+    </div>
+  </div>
+</section>

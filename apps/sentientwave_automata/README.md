@@ -1,0 +1,3 @@
+# SentientwaveAutomata
+
+**TODO: Add description**

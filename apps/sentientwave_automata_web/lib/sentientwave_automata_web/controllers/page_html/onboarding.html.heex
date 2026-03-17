@@ -1,0 +1,221 @@
+<Layouts.flash_group flash={@flash} />
+
+<section class="mx-auto max-w-6xl px-6 py-10">
+  <div class="rounded-box border border-base-300 bg-base-200 p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-sm uppercase tracking-[0.2em] text-base-content/70">
+          SentientWave Automata
+        </p>
+        <h1 class="mt-2 text-3xl font-bold tracking-tight">Onboarding Management</h1>
+        <p class="mt-3 text-base text-base-content/80">
+          Generate Matrix launch kits and validate onboarding payloads.
+        </p>
+      </div>
+      <form action={~p"/logout"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="_method" value="delete" />
+        <button type="submit" class="btn btn-outline btn-sm">Sign Out</button>
+      </form>
+    </div>
+
+    <div class="mt-4 flex flex-wrap gap-2 text-sm">
+      <span class="badge badge-outline">Company: {@status.company_name}</span>
+      <span class="badge badge-outline">Group: {@status.group_name}</span>
+      <span class="badge badge-outline">Admin: {@admin_user}</span>
+    </div>
+
+    <nav class="mt-5 flex flex-wrap gap-2">
+      <%= for item <- @nav do %>
+        <a
+          href={item.href}
+          class={["btn btn-sm", if(item.active, do: "btn-primary", else: "btn-ghost")]}
+        >
+          {item.label}
+        </a>
+      <% end %>
+    </nav>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-base font-semibold">Per-User Matrix Launch Kit</h2>
+    <p class="mt-2 text-sm text-base-content/70">
+      Generate onboarding cards with deep links, QR codes, and setup instructions for selected users.
+    </p>
+
+    <form action={~p"/onboarding"} method="get" class="mt-4 grid gap-3 md:grid-cols-2">
+      <label class="form-control w-full md:col-span-2">
+        <span class="label-text text-xs">
+          Users (comma/newline-separated localparts or full MXIDs)
+        </span>
+        <textarea
+          name="users"
+          class="textarea textarea-bordered h-24 w-full"
+          placeholder="alice,bob,@carol:matrix.local"
+        >{@artifacts.users_input}</textarea>
+      </label>
+      <label class="label cursor-pointer justify-start gap-2 md:col-span-2">
+        <input
+          type="checkbox"
+          name="include_passwords"
+          value="1"
+          class="checkbox checkbox-sm"
+          checked={@artifacts.include_passwords}
+        />
+        <span class="label-text text-xs">Include temporary passwords in launch kits</span>
+      </label>
+      <div class="md:col-span-2">
+        <button type="submit" class="btn btn-primary">Generate Launch Kits</button>
+      </div>
+    </form>
+
+    <div class="alert alert-warning mt-4 text-xs">
+      Admin warning: launch links and QR codes may include credentials. Share each kit only with the intended user.
+    </div>
+
+    <div class="mt-5 grid gap-4 lg:grid-cols-2">
+      <%= for user <- @artifacts.users do %>
+        <article class="rounded-box border border-base-300 bg-base-100 p-4">
+          <h3 class="text-base font-semibold">{user.mxid}</h3>
+          <p class="mt-2 text-xs text-base-content/70">Homeserver: {user.matrix_url}</p>
+          <p class="mt-1 text-xs text-base-content/70">
+            Temporary Password: {user.password_display}
+          </p>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <a class="btn btn-xs" href={user.onboarding_url} target="_blank" rel="noreferrer">
+              Open Personal Setup Link
+            </a>
+            <a class="btn btn-xs" href={user.login_url} target="_blank" rel="noreferrer">
+              Open Element Login
+            </a>
+            <%= if user.room_url != "" do %>
+              <a class="btn btn-xs" href={user.room_url} target="_blank" rel="noreferrer">
+                Open Room Link
+              </a>
+            <% end %>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <p class="text-xs font-semibold">Setup QR</p>
+              <img
+                class="mt-2 w-44 rounded border border-base-300"
+                src={user.login_qr_url}
+                alt={"Setup QR for #{user.mxid}"}
+              />
+            </div>
+            <div>
+              <p class="text-xs font-semibold">Room QR</p>
+              <%= if user.room_url != "" do %>
+                <img
+                  class="mt-2 w-44 rounded border border-base-300"
+                  src={user.room_qr_url}
+                  alt={"Room QR for #{user.mxid}"}
+                />
+              <% else %>
+                <p class="mt-2 text-xs text-base-content/60">No room link available.</p>
+              <% end %>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-box bg-base-200 p-3 text-xs">
+            <p class="font-semibold">Auto-generated setup instructions</p>
+            <p class="mt-1">1. Scan Setup QR (or open Personal Setup Link).</p>
+            <p class="mt-1">2. Use homeserver <code>{user.matrix_url}</code>.</p>
+            <p class="mt-1">3. Sign in as <code>{user.mxid}</code> with temporary password.</p>
+            <%= if user.room_alias != "" do %>
+              <p class="mt-1">
+                4. Scan Room QR (or click room link) to join <code>{user.room_alias}</code>.
+              </p>
+            <% end %>
+            <p class="mt-1">5. Rotate password immediately after first login.</p>
+          </div>
+        </article>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-base font-semibold">Onboarding Payload Validator</h2>
+    <p class="mt-2 text-sm text-base-content/70">
+      Validate company/group/user payloads before provisioning.
+    </p>
+
+    <form id="onboarding-validator" class="mt-4 grid gap-3 md:grid-cols-2">
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Company Name</span>
+        <input
+          name="company_name"
+          class="input input-bordered w-full"
+          value={@status.company_name}
+        />
+      </label>
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Group Name</span>
+        <input name="group_name" class="input input-bordered w-full" value={@status.group_name} />
+      </label>
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Homeserver Domain</span>
+        <input
+          name="homeserver_domain"
+          class="input input-bordered w-full"
+          placeholder="matrix.acme.local"
+          value={@status.homeserver_domain}
+        />
+      </label>
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Admin User</span>
+        <input
+          name="admin_user"
+          class="input input-bordered w-full"
+          placeholder="admin"
+          value={@admin_user}
+        />
+      </label>
+      <label class="form-control w-full md:col-span-2">
+        <span class="label-text text-xs">Invitees (comma-separated)</span>
+        <input
+          name="invitees"
+          class="input input-bordered w-full"
+          placeholder="alice,bob,@carol:matrix.acme.local"
+          value={@status.invite_users}
+        />
+      </label>
+      <div class="md:col-span-2">
+        <button type="submit" class="btn btn-secondary">Validate</button>
+      </div>
+    </form>
+
+    <pre
+      id="onboarding-validator-output"
+      class="mt-4 hidden overflow-x-auto rounded-box bg-base-200 p-3 text-xs"
+    ></pre>
+  </div>
+</section>
+
+<script>
+  (() => {
+    const form = document.getElementById("onboarding-validator");
+    const output = document.getElementById("onboarding-validator-output");
+    if (!form || !output) return;
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(form).entries());
+      output.classList.remove("hidden");
+      output.textContent = "Validating...";
+
+      try {
+        const response = await fetch("/api/v1/onboarding/validate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        output.textContent = JSON.stringify(await response.json(), null, 2);
+      } catch (error) {
+        output.textContent = "Request failed: " + String(error);
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,68 @@
+name: sentientwave-automata
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sentientwave_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:1.26.2
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: postgres
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on:
+      - temporal
+    ports:
+      - "8080:8080"
+
+  phoenix:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MIX_ENV: dev
+      DATABASE_URL: ecto://postgres:postgres@postgres/sentientwave_dev
+      PHX_HOST: localhost
+      TEMPORAL_BRIDGE_URL: http://temporal-bridge:8099
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    command: ["sh", "-lc", "mix ecto.create && mix ecto.migrate && mix phx.server"]
+    volumes:
+      - ./:/app
+
+  temporal-bridge:
+    image: ghcr.io/sentientwave/temporal-bridge:latest
+    ports:
+      - "8099:8099"
+    profiles: ["bridge"]
+
+volumes:
+  postgres_data:

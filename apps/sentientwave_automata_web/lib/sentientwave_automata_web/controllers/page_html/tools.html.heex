@@ -1,0 +1,198 @@
+<Layouts.flash_group flash={@flash} />
+
+<section class="mx-auto max-w-6xl px-6 py-10">
+  <div class="rounded-box border border-base-300 bg-base-200 p-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-sm uppercase tracking-[0.2em] text-base-content/70">
+          SentientWave Automata
+        </p>
+        <h1 class="mt-2 text-3xl font-bold tracking-tight">Tool Management</h1>
+        <p class="mt-3 text-base text-base-content/80">
+          Configure callable tools for agents. Tools can be enabled and credentials rotated without reinstall.
+        </p>
+      </div>
+      <form action={~p"/logout"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="_method" value="delete" />
+        <button type="submit" class="btn btn-outline btn-sm">Sign Out</button>
+      </form>
+    </div>
+
+    <nav class="mt-5 flex flex-wrap gap-2">
+      <%= for item <- @nav do %>
+        <a
+          href={item.href}
+          class={["btn btn-sm", if(item.active, do: "btn-primary", else: "btn-ghost")]}
+        >
+          {item.label}
+        </a>
+      <% end %>
+    </nav>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-lg font-semibold">Configured Tools</h2>
+    <p class="mt-2 text-sm text-base-content/70">
+      Brave Search can be used by agents for fresh internet retrieval.
+    </p>
+
+    <div class="mt-4 space-y-4">
+      <%= for tool <- @tools do %>
+        <article class="rounded-box border border-base-300 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-base font-semibold">{tool.name}</h3>
+            <span class={[
+              "badge",
+              if(tool.enabled, do: "badge-success", else: "badge-ghost")
+            ]}>
+              {if tool.enabled, do: "Enabled", else: "Disabled"}
+            </span>
+          </div>
+
+          <form
+            action={~p"/settings/tools/#{tool.id}"}
+            method="post"
+            class="mt-4 grid gap-3 md:grid-cols-2"
+          >
+            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Display Name</span>
+              <input name="tool[name]" class="input input-bordered w-full" value={tool.name} />
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Slug</span>
+              <input name="tool[slug]" class="input input-bordered w-full" value={tool.slug} />
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Tool</span>
+              <select name="tool[tool_name]" class="select select-bordered w-full">
+                <%= for {label, value} <- @tool_options do %>
+                  <option value={value} selected={tool.tool_name == value}>{label}</option>
+                <% end %>
+              </select>
+            </label>
+
+            <label class="form-control w-full">
+              <span class="label-text text-xs">Base URL</span>
+              <input
+                name="tool[base_url]"
+                class="input input-bordered w-full"
+                value={tool.base_url}
+                placeholder="https://api.search.brave.com"
+              />
+            </label>
+
+            <label class="form-control w-full md:col-span-2">
+              <span class="label-text text-xs">API Token (leave blank to keep existing)</span>
+              <input
+                name="tool[api_token]"
+                type="password"
+                class="input input-bordered w-full"
+                value=""
+              />
+            </label>
+
+            <div class="md:col-span-2 flex flex-wrap gap-4">
+              <label class="label cursor-pointer justify-start gap-2">
+                <input
+                  type="checkbox"
+                  name="tool[enabled]"
+                  value="1"
+                  class="checkbox checkbox-sm"
+                  checked={tool.enabled}
+                />
+                <span class="label-text text-xs">Enabled</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-2">
+                <input
+                  type="checkbox"
+                  name="tool[clear_api_token]"
+                  value="1"
+                  class="checkbox checkbox-sm"
+                />
+                <span class="label-text text-xs">Clear saved token</span>
+              </label>
+            </div>
+
+            <div class="md:col-span-2 flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </div>
+          </form>
+
+          <div class="mt-3">
+            <form action={~p"/settings/tools/#{tool.id}"} method="post">
+              <input
+                type="hidden"
+                name="_csrf_token"
+                value={Plug.CSRFProtection.get_csrf_token()}
+              />
+              <input type="hidden" name="_method" value="delete" />
+              <button type="submit" class="btn btn-error btn-outline btn-sm">Delete</button>
+            </form>
+          </div>
+        </article>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-5">
+    <h2 class="text-lg font-semibold">Add Tool</h2>
+    <form action={~p"/settings/tools"} method="post" class="mt-4 grid gap-3 md:grid-cols-2">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Display Name</span>
+        <input name="tool[name]" class="input input-bordered w-full" value="Brave Search" />
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Slug (optional)</span>
+        <input name="tool[slug]" class="input input-bordered w-full" placeholder="brave-search" />
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Tool</span>
+        <select name="tool[tool_name]" class="select select-bordered w-full">
+          <%= for {label, value} <- @tool_options do %>
+            <option value={value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="form-control w-full">
+        <span class="label-text text-xs">Base URL</span>
+        <input
+          name="tool[base_url]"
+          class="input input-bordered w-full"
+          value="https://api.search.brave.com"
+        />
+      </label>
+
+      <label class="form-control w-full md:col-span-2">
+        <span class="label-text text-xs">API Token</span>
+        <input name="tool[api_token]" type="password" class="input input-bordered w-full" />
+      </label>
+
+      <div class="md:col-span-2 flex flex-wrap gap-4">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="tool[enabled]"
+            value="1"
+            class="checkbox checkbox-sm"
+            checked
+          />
+          <span class="label-text text-xs">Enabled</span>
+        </label>
+      </div>
+
+      <div class="md:col-span-2">
+        <button type="submit" class="btn btn-primary">Add Tool</button>
+      </div>
+    </form>
+  </div>
+</section>

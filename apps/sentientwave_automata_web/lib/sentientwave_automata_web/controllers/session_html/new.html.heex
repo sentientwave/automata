@@ -1,0 +1,48 @@
+<Layouts.flash_group flash={@flash} />
+
+<section class="mx-auto mt-16 w-full max-w-md rounded-box border border-base-300 bg-base-100 p-6 shadow">
+  <p class="text-xs uppercase tracking-[0.18em] text-base-content/60">SentientWave Automata</p>
+  <h1 class="mt-2 text-2xl font-bold">Admin Login</h1>
+  <p class="mt-2 text-sm text-base-content/70">
+    This onboarding console contains Matrix credentials and QR provisioning links.
+  </p>
+
+  <form action={~p"/login"} method="post" class="mt-5 space-y-3">
+    <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+    <label class="form-control w-full">
+      <span class="label-text text-xs">Admin Username</span>
+      <input
+        name="username"
+        value={@default_user}
+        class="input input-bordered w-full"
+        autocomplete="username"
+      />
+    </label>
+
+    <label class="form-control w-full">
+      <span class="label-text text-xs">Admin Password</span>
+      <input
+        name="password"
+        type="password"
+        class="input input-bordered w-full"
+        autocomplete="current-password"
+      />
+    </label>
+
+    <button type="submit" class="btn btn-primary w-full">Sign In</button>
+  </form>
+
+  <%= unless @password_configured? do %>
+    <div class="alert alert-warning mt-4 text-sm">
+      Set <code>AUTOMATA_WEB_ADMIN_PASSWORD</code>
+      (or <code>MATRIX_ADMIN_PASSWORD</code>) before production use.
+    </div>
+  <% end %>
+
+  <%= if @insecure_default? do %>
+    <div class="alert alert-error mt-3 text-sm">
+      Current admin password is insecure (blank or default). Rotate immediately.
+    </div>
+  <% end %>
+</section>

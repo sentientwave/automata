@@ -1,0 +1,61 @@
+SentientWave Community Source License 1.0
+
+Copyright (c) 2026 SentientWave Inc.
+All rights reserved.
+
+1. Definitions
+
+"Software" means the source code and related files in this repository.
+"Licensor" means SentientWave Inc.
+"You" means the individual or legal entity exercising rights under this License.
+"Commercial Hosting" means making the Software available to third parties as a hosted, managed, SaaS, PaaS, cloud, or similar network service.
+
+2. Community Edition Grant
+
+Subject to the terms of this License, Licensor grants You a limited, non-exclusive, non-transferable, revocable, royalty-free license to:
+
+a) use the unmodified Software for Your internal purposes; and
+b) copy and run the unmodified Software in Your own environments.
+
+3. Restrictions
+
+You may not, without a separate explicit written license from SentientWave Inc.:
+
+a) modify, adapt, translate, create derivative works from, or otherwise change the Software;
+b) provide Commercial Hosting, managed service, cloud service, or any hosted offering based on the Software;
+c) sublicense, distribute, sell, lease, or otherwise commercialize the Software;
+d) remove or alter copyright, trademark, or license notices.
+
+For clarity, any non-SentientWave Inc. company is prohibited from operating or offering hosted/cloud versions of the Software without explicit written permission from SentientWave Inc.
+
+4. Enterprise / Commercial Licensing
+
+If You need rights beyond this Community Edition license (including modifications, hosted/cloud offerings, redistribution, or commercial exploitation), You must obtain a separate commercial license from SentientWave Inc.
+
+5. Ownership
+
+The Software is licensed, not sold. SentientWave Inc. retains all right, title, and interest in and to the Software and all related intellectual property rights.
+
+6. Trademarks
+
+This License does not grant rights to use SentientWave Inc. names, logos, or trademarks, except as necessary to reproduce notices required by this License.
+
+7. Termination
+
+Any use of the Software outside the scope of this License terminates this License immediately. Upon termination, You must cease use and destroy all copies of the Software in Your possession or control.
+
+8. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+9. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, SENTIENTWAVE INC. WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING FROM OR RELATED TO THIS LICENSE OR THE SOFTWARE.
+
+10. Governing Law
+
+This License is governed by the laws designated by SentientWave Inc. in its commercial terms or, absent such designation, by the laws of the state/country of Licensor's principal place of business, excluding conflict-of-law rules.
+
+11. Contact
+
+Licensing inquiries: licensing@sentientwave.com
