@@ -36,12 +36,59 @@ hot_upgrade_automata() {
   podman cp "${REPO_ROOT}/apps/." "${name}:/app/apps"
 
   podman exec "${name}" sh -lc "cd /app && MIX_ENV=prod mix deps.get && mix assets.deploy && mix compile"
-  if ! podman exec "${name}" supervisorctl restart automata >/dev/null 2>&1; then
-    log "supervisorctl unavailable in running container; falling back to process restart for automata"
-    podman exec "${name}" sh -lc "for p in \$(pgrep -f '[b]eam.smp.*sentientwave_automata' || true); do [ -n \"\$p\" ] && kill -TERM \"\$p\" || true; done; exit 0"
-  fi
+  restart_automata_process "${name}"
 
   log "Automata hot-upgrade complete (Matrix was not restarted)"
+}
+
+restart_automata_process() {
+  local name="$1"
+
+  if podman exec "${name}" sh -lc "command -v supervisorctl >/dev/null 2>&1"; then
+    if podman exec "${name}" sh -lc "supervisorctl -c /etc/supervisor/conf.d/all-in-one.conf restart automata"; then
+      return 0
+    fi
+
+    log "supervisorctl exists but restart failed; trying direct process recycle"
+  else
+    log "supervisorctl not available; trying direct process recycle"
+  fi
+
+  podman exec "${name}" sh -lc '
+set -eu
+
+beam_before="$(pgrep -f "beam.smp.*(phx.server|sentientwave_automata)" | head -n 1 || true)"
+
+# Stop Automata processes as safely as possible. Keep Matrix untouched.
+for p in $(pgrep -f "(beam.smp.*(phx.server|sentientwave_automata)|/opt/all-in-one/scripts/start-automata.sh|mix phx.server)" || true); do
+  [ -n "$p" ] && kill -TERM "$p" || true
+done
+
+sleep 2
+
+if pgrep -x supervisord >/dev/null 2>&1; then
+  # Wait for supervisord to respawn Automata.
+  i=0
+  while [ "$i" -lt 20 ]; do
+    beam_after="$(pgrep -f "beam.smp.*(phx.server|sentientwave_automata)" | head -n 1 || true)"
+    if [ -n "$beam_after" ] && [ "$beam_after" != "$beam_before" ]; then
+      exit 0
+    fi
+    i=$((i+1))
+    sleep 1
+  done
+else
+  # No supervisor in container; start Automata in background.
+  nohup /opt/all-in-one/scripts/start-automata.sh >/tmp/automata-upgrade.log 2>&1 &
+  sleep 2
+  if pgrep -f "beam.smp.*(phx.server|sentientwave_automata)" >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
+echo "[all-in-one] ERROR: Unable to verify Automata restart after upgrade" >&2
+exit 1
+'
 }
 
 full_stack_upgrade() {
