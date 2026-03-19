@@ -51,8 +51,86 @@ defmodule SentientwaveAutomataWeb.PageController do
     render_llm(conn)
   end
 
+  def new_llm_provider(conn, _params) do
+    status = Status.summary()
+    effective = Settings.llm_provider_effective()
+    providers = Settings.list_llm_provider_configs()
+
+    render(conn, :new_llm_provider,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("llm"),
+      provider_options: @provider_options,
+      llm: effective,
+      providers: providers,
+      token_configured?: token_configured?(effective.api_token),
+      persisted?: effective.configured_in_db
+    )
+  end
+
+  def llm_provider(conn, %{"id" => id}) do
+    status = Status.summary()
+    effective = Settings.llm_provider_effective()
+    providers = Settings.list_llm_provider_configs()
+
+    case Settings.get_llm_provider_config(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Provider not found.")
+        |> redirect(to: ~p"/settings/llm")
+
+      provider ->
+        render(conn, :llm_provider,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("llm"),
+          provider_options: @provider_options,
+          llm: effective,
+          providers: providers,
+          provider: provider,
+          token_configured?: token_configured?(effective.api_token),
+          persisted?: effective.configured_in_db
+        )
+    end
+  end
+
   def tools(conn, _params) do
     render_tools(conn)
+  end
+
+  def new_tool(conn, _params) do
+    status = Status.summary()
+    tools = Settings.list_tool_configs()
+
+    render(conn, :new_tool,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("tools"),
+      tool_options: @tool_options,
+      tools: tools
+    )
+  end
+
+  def tool(conn, %{"id" => id}) do
+    status = Status.summary()
+    tools = Settings.list_tool_configs()
+
+    case Settings.get_tool_config(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Tool not found.")
+        |> redirect(to: ~p"/settings/tools")
+
+      tool ->
+        render(conn, :tool,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("tools"),
+          tool_options: @tool_options,
+          tools: tools,
+          tool: tool
+        )
+    end
   end
 
   def create_llm_provider(conn, %{"llm" => llm_params}) do
@@ -99,12 +177,12 @@ defmodule SentientwaveAutomataWeb.PageController do
           {:ok, _updated} ->
             conn
             |> put_flash(:info, "LLM provider updated.")
-            |> redirect(to: ~p"/settings/llm")
+            |> redirect(to: ~p"/settings/llm/providers/#{config.id}")
 
           {:error, _changeset} ->
             conn
             |> put_flash(:error, "Could not update LLM provider.")
-            |> redirect(to: ~p"/settings/llm")
+            |> redirect(to: ~p"/settings/llm/providers/#{config.id}")
         end
     end
   end
@@ -192,12 +270,12 @@ defmodule SentientwaveAutomataWeb.PageController do
           {:ok, _updated} ->
             conn
             |> put_flash(:info, "Tool updated.")
-            |> redirect(to: ~p"/settings/tools")
+            |> redirect(to: ~p"/settings/tools/#{config.id}")
 
           {:error, _changeset} ->
             conn
             |> put_flash(:error, "Could not update tool.")
-            |> redirect(to: ~p"/settings/tools")
+            |> redirect(to: ~p"/settings/tools/#{config.id}")
         end
     end
   end

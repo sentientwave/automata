@@ -1,0 +1,84 @@
+<.admin_shell
+  flash={@flash}
+  title={"Edit Tool: #{@tool.name}"}
+  subtitle="Update tool connectivity and runtime flags on a dedicated configuration page."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/settings/tools"} class="sw-btn sw-btn-ghost">Back to tool table</a>
+      <form action={~p"/settings/tools/#{@tool.id}"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="_method" value="delete" />
+        <button type="submit" class="sw-btn sw-btn-danger">Delete Tool</button>
+      </form>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Tool: {@tool.tool_name}</span>
+      <span class={["sw-pill", @tool.enabled && "is-ok"]}>
+        {if @tool.enabled, do: "Enabled", else: "Disabled"}
+      </span>
+      <span class="sw-pill">
+        Token: {if @tool.api_token in [nil, ""], do: "not set", else: "configured"}
+      </span>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <h2 class="sw-card-title">Tool Configuration</h2>
+    <form action={~p"/settings/tools/#{@tool.id}"} method="post" class="sw-form-grid mt-5">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+      <label class="sw-field">
+        <span>Display Name</span>
+        <input name="tool[name]" class="sw-input" value={@tool.name} />
+      </label>
+
+      <label class="sw-field">
+        <span>Slug</span>
+        <input name="tool[slug]" class="sw-input" value={@tool.slug} />
+      </label>
+
+      <label class="sw-field">
+        <span>Tool</span>
+        <select name="tool[tool_name]" class="sw-select">
+          <%= for {label, value} <- @tool_options do %>
+            <option value={value} selected={@tool.tool_name == value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Base URL</span>
+        <input
+          name="tool[base_url]"
+          class="sw-input"
+          value={@tool.base_url}
+          placeholder="https://api.search.brave.com"
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>API Token (leave blank to keep existing)</span>
+        <input name="tool[api_token]" type="password" class="sw-input" value="" />
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input type="checkbox" name="tool[enabled]" value="1" checked={@tool.enabled} />
+        <span>Enabled</span>
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input type="checkbox" name="tool[clear_api_token]" value="1" />
+        <span>Clear saved token</span>
+      </label>
+
+      <div class="sw-field-span sw-actions">
+        <button type="submit" class="sw-btn sw-btn-primary">Save Tool</button>
+      </div>
+    </form>
+  </section>
+</.admin_shell>

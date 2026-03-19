@@ -1,0 +1,114 @@
+<.admin_shell
+  flash={@flash}
+  title={"Edit Provider: #{@provider.name}"}
+  subtitle="Adjust model routing, timeout, endpoint, and credentials on a dedicated page."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/settings/llm"} class="sw-btn sw-btn-ghost">Back to provider table</a>
+      <form action={~p"/settings/llm/providers/#{@provider.id}/default"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <button type="submit" class="sw-btn sw-btn-ghost" disabled={@provider.is_default}>
+          Set Default
+        </button>
+      </form>
+      <form action={~p"/settings/llm/providers/#{@provider.id}"} method="post">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="_method" value="delete" />
+        <button type="submit" class="sw-btn sw-btn-danger">Delete Provider</button>
+      </form>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Provider: {@provider.provider}</span>
+      <span class="sw-pill">Model: {@provider.model}</span>
+      <span class="sw-pill">Timeout: {@provider.timeout_seconds || 600}s</span>
+      <span class={["sw-pill", @provider.is_default && "is-ok"]}>
+        {if @provider.is_default, do: "Default", else: "Secondary"}
+      </span>
+      <span class={["sw-pill", @provider.enabled && "is-ok"]}>
+        {if @provider.enabled, do: "Enabled", else: "Disabled"}
+      </span>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <h2 class="sw-card-title">Provider Configuration</h2>
+    <form action={~p"/settings/llm/providers/#{@provider.id}"} method="post" class="sw-form-grid mt-5">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+      <label class="sw-field">
+        <span>Display Name</span>
+        <input name="llm[name]" class="sw-input" value={@provider.name} />
+      </label>
+
+      <label class="sw-field">
+        <span>Slug</span>
+        <input name="llm[slug]" class="sw-input" value={@provider.slug} />
+      </label>
+
+      <label class="sw-field">
+        <span>Provider</span>
+        <select name="llm[provider]" class="sw-select">
+          <%= for {label, value} <- @provider_options do %>
+            <option value={value} selected={@provider.provider == value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Model</span>
+        <input
+          name="llm[model]"
+          class="sw-input"
+          value={@provider.model}
+          placeholder="gpt-4o-mini / llama3.1 / openai/gpt-4o-mini"
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Timeout (seconds)</span>
+        <input
+          name="llm[timeout_seconds]"
+          type="number"
+          min="1"
+          max="3600"
+          class="sw-input"
+          value={@provider.timeout_seconds || 600}
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>Base URL (optional)</span>
+        <input
+          name="llm[base_url]"
+          class="sw-input"
+          value={@provider.base_url}
+          placeholder="https://api.openai.com/v1 or http://host.containers.internal:11434"
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>API Token (leave blank to keep existing)</span>
+        <input name="llm[api_token]" type="password" class="sw-input" value="" />
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input type="checkbox" name="llm[enabled]" value="1" checked={@provider.enabled} />
+        <span>Enabled</span>
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input type="checkbox" name="llm[clear_api_token]" value="1" />
+        <span>Clear saved token</span>
+      </label>
+
+      <div class="sw-field-span sw-actions">
+        <button type="submit" class="sw-btn sw-btn-primary">Save Provider</button>
+      </div>
+    </form>
+  </section>
+</.admin_shell>

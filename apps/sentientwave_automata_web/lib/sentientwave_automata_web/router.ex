@@ -40,7 +40,11 @@ defmodule SentientwaveAutomataWeb.Router do
     get "/dashboard", PageController, :dashboard
     get "/onboarding", PageController, :onboarding
     get "/settings/llm", PageController, :llm
+    get "/settings/llm/providers/new", PageController, :new_llm_provider
+    get "/settings/llm/providers/:id", PageController, :llm_provider
     get "/settings/tools", PageController, :tools
+    get "/settings/tools/new", PageController, :new_tool
+    get "/settings/tools/:id", PageController, :tool
     post "/settings/llm/providers", PageController, :create_llm_provider
     post "/settings/llm/providers/:id", PageController, :update_llm_provider
     post "/settings/llm/providers/:id/default", PageController, :set_default_llm_provider

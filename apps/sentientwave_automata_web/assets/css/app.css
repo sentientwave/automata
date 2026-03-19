@@ -283,6 +283,14 @@
   font-size: 0.92rem;
 }
 
+.sw-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
 .sw-action-card {
   display: block;
   padding: 1rem 1.1rem;
@@ -363,6 +371,68 @@
   margin-top: 1rem;
   display: grid;
   gap: 0.9rem;
+}
+
+.sw-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d9e3e8;
+  border-radius: 0.95rem;
+  background: #fcfeff;
+}
+
+.sw-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+
+.sw-data-table th,
+.sw-data-table td {
+  padding: 0.9rem 0.85rem;
+  border-bottom: 1px solid #e5edf1;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.88rem;
+  color: #233944;
+}
+
+.sw-data-table th {
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #607684;
+  background: #f6fafb;
+}
+
+.sw-data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sw-data-table tbody tr:hover {
+  background: #f9fcfd;
+}
+
+.sw-table-primary {
+  font-weight: 700;
+  color: #18313c;
+}
+
+.sw-table-secondary {
+  margin-top: 0.2rem;
+  color: #6a818e;
+  font-size: 0.8rem;
+}
+
+.sw-table-endpoint {
+  max-width: 320px;
+  color: #516975;
+  word-break: break-word;
+}
+
+.sw-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .sw-subcard {
@@ -493,6 +563,12 @@
 
 .sw-btn-block {
   width: 100%;
+}
+
+.sw-btn-small {
+  padding: 0.42rem 0.64rem;
+  font-size: 0.79rem;
+  border-radius: 0.62rem;
 }
 
 .sw-inline-actions {

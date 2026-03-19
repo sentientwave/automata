@@ -1,0 +1,63 @@
+<.admin_shell
+  flash={@flash}
+  title="Add Tool"
+  subtitle="Create a new tool on a dedicated page, then return to the tool table."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/settings/tools"} class="sw-btn sw-btn-ghost">Back to tool table</a>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <h2 class="sw-card-title">New Tool</h2>
+    <form action={~p"/settings/tools"} method="post" class="sw-form-grid mt-5">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+      <label class="sw-field">
+        <span>Display Name</span>
+        <input name="tool[name]" class="sw-input" value="Brave Search" />
+      </label>
+
+      <label class="sw-field">
+        <span>Slug (optional)</span>
+        <input name="tool[slug]" class="sw-input" placeholder="brave-search" />
+      </label>
+
+      <label class="sw-field">
+        <span>Tool</span>
+        <select name="tool[tool_name]" class="sw-select">
+          <%= for {label, value} <- @tool_options do %>
+            <option value={value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Base URL</span>
+        <input
+          name="tool[base_url]"
+          class="sw-input"
+          value="https://api.search.brave.com"
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>API Token</span>
+        <input name="tool[api_token]" type="password" class="sw-input" />
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input type="checkbox" name="tool[enabled]" value="1" checked />
+        <span>Enabled</span>
+      </label>
+
+      <div class="sw-field-span sw-actions">
+        <button type="submit" class="sw-btn sw-btn-primary">Add Tool</button>
+      </div>
+    </form>
+  </section>
+</.admin_shell>

@@ -21,185 +21,87 @@
   </section>
 
   <section class="sw-card">
-    <h2 class="sw-card-title">Configured Providers</h2>
-    <p class="sw-card-copy">
-      Maintain multiple providers for fallback, locality, and cost control.
-    </p>
-
-    <div class="sw-stack">
-      <article :for={provider <- @providers} class="sw-subcard">
-        <header class="sw-subcard-header">
-          <h3>{provider.name}</h3>
-          <div class="sw-pill-list">
-            <span class={["sw-pill", provider.is_default && "is-ok"]}>
-              {if provider.is_default, do: "Default", else: "Secondary"}
-            </span>
-            <span class={["sw-pill", provider.enabled && "is-ok"]}>
-              {if provider.enabled, do: "Enabled", else: "Disabled"}
-            </span>
-          </div>
-        </header>
-
-        <form
-          action={~p"/settings/llm/providers/#{provider.id}"}
-          method="post"
-          class="sw-form-grid mt-4"
-        >
-          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-
-          <label class="sw-field">
-            <span>Display Name</span>
-            <input name="llm[name]" class="sw-input" value={provider.name} />
-          </label>
-
-          <label class="sw-field">
-            <span>Slug</span>
-            <input name="llm[slug]" class="sw-input" value={provider.slug} />
-          </label>
-
-          <label class="sw-field">
-            <span>Provider</span>
-            <select name="llm[provider]" class="sw-select">
-              <%= for {label, value} <- @provider_options do %>
-                <option value={value} selected={provider.provider == value}>{label}</option>
-              <% end %>
-            </select>
-          </label>
-
-          <label class="sw-field">
-            <span>Model</span>
-            <input
-              name="llm[model]"
-              class="sw-input"
-              value={provider.model}
-              placeholder="gpt-4o-mini / llama3.1 / openai/gpt-4o-mini"
-            />
-          </label>
-
-          <label class="sw-field">
-            <span>Timeout (seconds)</span>
-            <input
-              name="llm[timeout_seconds]"
-              type="number"
-              min="1"
-              max="3600"
-              class="sw-input"
-              value={provider.timeout_seconds || 600}
-            />
-          </label>
-
-          <label class="sw-field sw-field-span">
-            <span>Base URL (optional)</span>
-            <input
-              name="llm[base_url]"
-              class="sw-input"
-              value={provider.base_url}
-              placeholder="https://api.openai.com/v1 or http://host.containers.internal:11434"
-            />
-          </label>
-
-          <label class="sw-field sw-field-span">
-            <span>API Token (leave blank to keep existing)</span>
-            <input name="llm[api_token]" type="password" class="sw-input" value="" />
-          </label>
-
-          <label class="sw-checkbox-row">
-            <input type="checkbox" name="llm[enabled]" value="1" checked={provider.enabled} />
-            <span>Enabled</span>
-          </label>
-
-          <label class="sw-checkbox-row">
-            <input type="checkbox" name="llm[clear_api_token]" value="1" />
-            <span>Clear saved token</span>
-          </label>
-
-          <div class="sw-field-span sw-actions">
-            <button type="submit" class="sw-btn sw-btn-primary">Save Changes</button>
-          </div>
-        </form>
-
-        <div class="sw-inline-actions">
-          <form action={~p"/settings/llm/providers/#{provider.id}/default"} method="post">
-            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-            <button type="submit" class="sw-btn sw-btn-ghost" disabled={provider.is_default}>
-              Set Default
-            </button>
-          </form>
-
-          <form action={~p"/settings/llm/providers/#{provider.id}"} method="post">
-            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-            <input type="hidden" name="_method" value="delete" />
-            <button type="submit" class="sw-btn sw-btn-danger">Delete</button>
-          </form>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section class="sw-card">
-    <h2 class="sw-card-title">Add Provider</h2>
-    <form action={~p"/settings/llm/providers"} method="post" class="sw-form-grid mt-5">
-      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-
-      <label class="sw-field">
-        <span>Display Name</span>
-        <input name="llm[name]" class="sw-input" placeholder="OpenAI Primary" />
-      </label>
-
-      <label class="sw-field">
-        <span>Slug (optional)</span>
-        <input name="llm[slug]" class="sw-input" placeholder="openai-primary" />
-      </label>
-
-      <label class="sw-field">
-        <span>Provider</span>
-        <select name="llm[provider]" class="sw-select">
-          <%= for {label, value} <- @provider_options do %>
-            <option value={value}>{label}</option>
-          <% end %>
-        </select>
-      </label>
-
-      <label class="sw-field">
-        <span>Model</span>
-        <input name="llm[model]" class="sw-input" value="local-default" />
-      </label>
-
-      <label class="sw-field">
-        <span>Timeout (seconds)</span>
-        <input
-          name="llm[timeout_seconds]"
-          type="number"
-          min="1"
-          max="3600"
-          class="sw-input"
-          value="600"
-        />
-      </label>
-
-      <label class="sw-field sw-field-span">
-        <span>Base URL (optional)</span>
-        <input name="llm[base_url]" class="sw-input" />
-      </label>
-
-      <label class="sw-field sw-field-span">
-        <span>API Token (optional)</span>
-        <input name="llm[api_token]" type="password" class="sw-input" />
-      </label>
-
-      <label class="sw-checkbox-row">
-        <input type="checkbox" name="llm[enabled]" value="1" checked />
-        <span>Enabled</span>
-      </label>
-
-      <label class="sw-checkbox-row">
-        <input type="checkbox" name="llm[is_default]" value="1" />
-        <span>Set as default</span>
-      </label>
-
-      <div class="sw-field-span sw-actions">
-        <button type="submit" class="sw-btn sw-btn-primary">Add Provider</button>
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Configured Providers</h2>
+        <p class="sw-card-copy">
+          Maintain multiple providers for fallback, locality, and cost control.
+        </p>
       </div>
-    </form>
+      <a href={~p"/settings/llm/providers/new"} class="sw-btn sw-btn-primary">Add Provider</a>
+    </div>
+
+    <div class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Timeout</th>
+            <th>Endpoint</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={provider <- @providers}>
+            <td>
+              <div class="sw-table-primary">{provider.name}</div>
+              <div class="sw-table-secondary">{provider.slug}</div>
+            </td>
+            <td>{provider.provider}</td>
+            <td><code>{provider.model}</code></td>
+            <td>{provider.timeout_seconds || 600}s</td>
+            <td class="sw-table-endpoint">
+              {if provider.base_url in [nil, ""], do: "default endpoint", else: provider.base_url}
+            </td>
+            <td>
+              <div class="sw-pill-list">
+                <span class={["sw-pill", provider.is_default && "is-ok"]}>
+                  {if provider.is_default, do: "Default", else: "Secondary"}
+                </span>
+                <span class={["sw-pill", provider.enabled && "is-ok"]}>
+                  {if provider.enabled, do: "Enabled", else: "Disabled"}
+                </span>
+              </div>
+            </td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/settings/llm/providers/#{provider.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Configure
+                </a>
+                <form action={~p"/settings/llm/providers/#{provider.id}/default"} method="post">
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <button
+                    type="submit"
+                    class="sw-btn sw-btn-ghost sw-btn-small"
+                    disabled={provider.is_default}
+                  >
+                    Set Default
+                  </button>
+                </form>
+                <form action={~p"/settings/llm/providers/#{provider.id}"} method="post">
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input type="hidden" name="_method" value="delete" />
+                  <button type="submit" class="sw-btn sw-btn-danger sw-btn-small">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 </.admin_shell>
