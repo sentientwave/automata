@@ -42,6 +42,11 @@ defmodule SentientwaveAutomataWeb.PageHTML do
           <p>Homeserver: <strong>{@status.homeserver_domain}</strong></p>
         </div>
 
+        <div class="sw-sidebar-theme">
+          <p class="sw-sidebar-section-title">Appearance</p>
+          <Layouts.theme_toggle />
+        </div>
+
         <form action={~p"/logout"} method="post" class="sw-sidebar-logout">
           <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
           <input type="hidden" name="_method" value="delete" />

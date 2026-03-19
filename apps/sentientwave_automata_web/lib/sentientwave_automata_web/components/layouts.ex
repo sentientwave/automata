@@ -122,31 +122,35 @@ defmodule SentientwaveAutomataWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
+    <div class="sw-theme-toggle" aria-label="Theme switcher">
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        type="button"
+        class="sw-theme-option"
         phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="system"
+        data-phx-theme="auto"
+        data-theme-mode="auto"
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
+        Auto
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        type="button"
+        class="sw-theme-option"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        data-theme-mode="light"
       >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
+        Light
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        type="button"
+        class="sw-theme-option"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        data-theme-mode="dark"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        Dark
       </button>
     </div>
     """
