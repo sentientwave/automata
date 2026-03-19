@@ -116,7 +116,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Synapse do
         Map.get(event, "event_id", Integer.to_string(System.unique_integer([:positive]))),
       body: body,
       raw_event: event,
-      metadata: %{"source" => "matrix_sync"}
+      metadata: %{"source" => "matrix_sync", "conversation_scope" => "room"}
     })
 
     :ok

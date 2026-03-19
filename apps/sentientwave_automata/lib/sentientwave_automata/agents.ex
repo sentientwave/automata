@@ -8,6 +8,7 @@ defmodule SentientwaveAutomata.Agents do
   alias SentientwaveAutomata.Agents.{
     AgentWallet,
     AgentProfile,
+    LLMTrace,
     Memory,
     Mention,
     Run,
@@ -189,6 +190,25 @@ defmodule SentientwaveAutomata.Agents do
     %Memory{}
     |> Memory.changeset(attrs)
     |> Repo.insert()
+  end
+
+  @spec create_llm_trace(map()) :: {:ok, LLMTrace.t()} | {:error, Ecto.Changeset.t()}
+  def create_llm_trace(attrs) do
+    %LLMTrace{}
+    |> LLMTrace.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @spec list_llm_traces(keyword()) :: [LLMTrace.t()]
+  def list_llm_traces(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
+
+    Repo.all(
+      from t in LLMTrace,
+        preload: [:agent, :run, :mention, :provider_config],
+        order_by: [desc: t.requested_at, desc: t.inserted_at],
+        limit: ^limit
+    )
   end
 
   @spec list_memories_for_agent(binary()) :: [Memory.t()]

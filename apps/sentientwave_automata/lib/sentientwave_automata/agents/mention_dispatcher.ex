@@ -30,14 +30,30 @@ defmodule SentientwaveAutomata.Agents.MentionDispatcher do
   defp start_runs(targets, mention, room_id, body, sender_mxid) do
     result =
       Enum.reduce_while(targets, {:ok, []}, fn agent, {:ok, run_ids} ->
+        remote_ip = mention.metadata |> Map.get("remote_ip", "") |> to_string() |> String.trim()
+        conversation_scope = mention.metadata |> Map.get("conversation_scope", "room")
+
         attrs = %{
           agent_id: agent.id,
           mention_id: mention.id,
           room_id: room_id,
           trigger: :mention,
           requested_by: sender_mxid,
-          input: %{body: body, sender_mxid: sender_mxid, mention_id: mention.id},
-          metadata: %{agent_slug: agent.slug}
+          remote_ip: remote_ip,
+          conversation_scope: conversation_scope,
+          input: %{
+            body: body,
+            sender_mxid: sender_mxid,
+            mention_id: mention.id,
+            message_id: mention.message_id,
+            remote_ip: remote_ip,
+            conversation_scope: conversation_scope
+          },
+          metadata:
+            mention.metadata
+            |> Map.put_new("source", "mention_dispatch")
+            |> Map.put("conversation_scope", conversation_scope)
+            |> Map.put("agent_slug", agent.slug)
         }
 
         case Durable.start_run(attrs) do

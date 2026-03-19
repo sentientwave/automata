@@ -32,7 +32,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Local do
         Map.get(event, "event_id", Integer.to_string(System.unique_integer([:positive]))),
       body: body,
       raw_event: event,
-      metadata: %{}
+      metadata: %{"source" => "matrix_local", "conversation_scope" => "room"}
     })
 
     :ok

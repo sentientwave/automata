@@ -95,7 +95,8 @@ defmodule SentientwaveAutomata.Agents.Activities do
            agent_slug: agent_slug,
            user_input: body,
            context_text: Map.get(context, :context_text, ""),
-           room_id: Map.get(attrs, :room_id, "")
+           room_id: Map.get(attrs, :room_id, ""),
+           trace_context: trace_context(run, attrs)
          ) do
       {:ok, text} ->
         {:ok, text}
@@ -113,6 +114,38 @@ defmodule SentientwaveAutomata.Agents.Activities do
           end
 
         {:ok, fallback}
+    end
+  end
+
+  defp trace_context(%Run{} = run, attrs) do
+    input = Map.get(attrs, :input, %{})
+    metadata = Map.get(attrs, :metadata, %{})
+
+    %{
+      run_id: run.id,
+      mention_id: Map.get(attrs, :mention_id) || Map.get(input, :mention_id),
+      requested_by: Map.get(attrs, :requested_by),
+      sender_mxid: Map.get(input, :sender_mxid) || Map.get(attrs, :requested_by),
+      room_id: Map.get(attrs, :room_id, ""),
+      conversation_scope:
+        Map.get(attrs, :conversation_scope) ||
+          Map.get(input, :conversation_scope) ||
+          Map.get(metadata, "conversation_scope") ||
+          Map.get(metadata, :conversation_scope) ||
+          infer_conversation_scope(attrs),
+      remote_ip:
+        Map.get(attrs, :remote_ip) ||
+          Map.get(input, :remote_ip) ||
+          Map.get(metadata, "remote_ip") ||
+          Map.get(metadata, :remote_ip)
+    }
+  end
+
+  defp infer_conversation_scope(attrs) do
+    if Map.get(attrs, :room_id, "") |> to_string() |> String.trim() != "" do
+      "room"
+    else
+      "unknown"
     end
   end
 

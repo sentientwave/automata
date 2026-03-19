@@ -4,6 +4,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
   """
 
   require Logger
+  alias SentientwaveAutomata.Agents.LLM.TraceRecorder
   alias SentientwaveAutomata.Agents.Tools.Executor
   alias SentientwaveAutomata.Settings
 
@@ -19,6 +20,21 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
     timeout_seconds = Keyword.get(opts, :timeout_seconds, effective.timeout_seconds || 600)
     agent_id = Keyword.get(opts, :agent_id)
     context_text = Keyword.get(opts, :context_text, "") |> to_string() |> String.trim()
+    trace_context = Keyword.get(opts, :trace_context, %{})
+
+    provider_opts =
+      [
+        model: model,
+        base_url: effective.base_url,
+        api_key: effective.api_token,
+        timeout_seconds: timeout_seconds,
+        agent_id: agent_id,
+        user_input: user_input,
+        room_id: Keyword.get(opts, :room_id)
+      ]
+      |> Keyword.put(:trace_context, trace_context)
+      |> Keyword.put(:provider, provider)
+      |> Keyword.put(:provider_config_id, effective.id)
 
     messages =
       [
@@ -31,16 +47,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
         [%{"role" => "user", "content" => user_prompt(user_input)}]
 
     with {:ok, module} <- provider_module(provider),
-         {:ok, text} <-
-           complete_with_optional_tools(module, messages,
-             model: model,
-             base_url: effective.base_url,
-             api_key: effective.api_token,
-             timeout_seconds: timeout_seconds,
-             agent_id: agent_id,
-             user_input: user_input,
-             room_id: Keyword.get(opts, :room_id)
-           ),
+         {:ok, text} <- complete_with_optional_tools(module, messages, provider_opts),
          text when is_binary(text) and text != "" <- sanitize_text(text) do
       {:ok, text}
     else
@@ -74,7 +81,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
     user_input = Keyword.get(opts, :user_input, "") |> to_string() |> String.trim()
 
     if available_tools == [] do
-      module.complete(base_messages, opts)
+      traced_complete(module, base_messages, opts, "response", 0)
     else
       with {:ok, plan} <- heuristic_tool_plan(user_input, available_tools, opts),
            true <- plan != [],
@@ -93,7 +100,13 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
 
   defp run_model_tool_planner(module, base_messages, user_input, available_tools, opts) do
     with {:ok, tool_plan_text} <-
-           module.complete(base_messages ++ [tool_planner_message(available_tools)], opts),
+           traced_complete(
+             module,
+             base_messages ++ [tool_planner_message(available_tools)],
+             opts,
+             "tool_planner",
+             0
+           ),
          {:ok, plan} <-
            parse_or_infer_tool_plan(tool_plan_text, user_input, available_tools, opts),
          {:ok, tool_context} <- execute_tool_plan(plan, available_tools),
@@ -108,11 +121,33 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
         }
       ]
 
-      module.complete(base_messages ++ tool_result_messages, opts)
+      traced_complete(module, base_messages ++ tool_result_messages, opts, "tool_response", 1)
     else
-      false -> module.complete(base_messages, opts)
-      _ -> module.complete(base_messages, opts)
+      false -> traced_complete(module, base_messages, opts, "response_fallback", 1)
+      _ -> traced_complete(module, base_messages, opts, "response_fallback", 1)
     end
+  end
+
+  defp traced_complete(module, messages, opts, call_kind, sequence_index) do
+    call_meta = %{
+      agent_id: Keyword.get(opts, :agent_id),
+      provider: Keyword.get(opts, :provider),
+      provider_config_id: Keyword.get(opts, :provider_config_id),
+      model: Keyword.get(opts, :model),
+      base_url: Keyword.get(opts, :base_url),
+      timeout_seconds: Keyword.get(opts, :timeout_seconds),
+      trace_context: Keyword.get(opts, :trace_context, %{}),
+      messages: messages,
+      call_kind: call_kind,
+      sequence_index: sequence_index
+    }
+
+    TraceRecorder.record_completion(call_meta, fn ->
+      module.complete(
+        messages,
+        Keyword.drop(opts, [:trace_context, :provider, :provider_config_id])
+      )
+    end)
   end
 
   defp tool_planner_message(available_tools) do
