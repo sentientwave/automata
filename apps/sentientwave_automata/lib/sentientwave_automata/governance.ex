@@ -36,7 +36,7 @@ defmodule SentientwaveAutomata.Governance do
     Law
     |> maybe_filter_law_status(opts)
     |> maybe_filter_law_kind(opts)
-    |> maybe_search_laws(Keyword.get(opts, :q))
+    |> maybe_search_laws(option_get(opts, :q))
     |> order_by([law], asc: law.position, asc: law.slug, asc: law.version)
     |> Repo.all()
   end
@@ -46,7 +46,7 @@ defmodule SentientwaveAutomata.Governance do
     Law
     |> maybe_filter_law_status(opts)
     |> maybe_filter_law_kind(opts)
-    |> maybe_search_laws(Keyword.get(opts, :q))
+    |> maybe_search_laws(option_get(opts, :q))
     |> Repo.aggregate(:count, :id)
   end
 
@@ -111,7 +111,7 @@ defmodule SentientwaveAutomata.Governance do
   def list_roles(opts \\ []) do
     Role
     |> maybe_filter_role_enabled(opts)
-    |> maybe_search_roles(Keyword.get(opts, :q))
+    |> maybe_search_roles(option_get(opts, :q))
     |> order_by([role], asc: role.name, asc: role.slug)
     |> Repo.all()
   end
@@ -120,7 +120,7 @@ defmodule SentientwaveAutomata.Governance do
   def count_roles(opts \\ []) do
     Role
     |> maybe_filter_role_enabled(opts)
-    |> maybe_search_roles(Keyword.get(opts, :q))
+    |> maybe_search_roles(option_get(opts, :q))
     |> Repo.aggregate(:count, :id)
   end
 
@@ -259,8 +259,8 @@ defmodule SentientwaveAutomata.Governance do
     LawProposal
     |> maybe_filter_proposal_status(opts)
     |> maybe_filter_proposal_type(opts)
-    |> maybe_search_proposals(Keyword.get(opts, :q))
-    |> maybe_filter_proposal_room(Keyword.get(opts, :room_id))
+    |> maybe_search_proposals(option_get(opts, :q))
+    |> maybe_filter_proposal_room(option_get(opts, :room_id))
     |> order_by([proposal], desc: proposal.opened_at, desc: proposal.inserted_at)
     |> Repo.all()
     |> Repo.preload(proposal_preloads())
@@ -271,8 +271,8 @@ defmodule SentientwaveAutomata.Governance do
     LawProposal
     |> maybe_filter_proposal_status(opts)
     |> maybe_filter_proposal_type(opts)
-    |> maybe_search_proposals(Keyword.get(opts, :q))
-    |> maybe_filter_proposal_room(Keyword.get(opts, :room_id))
+    |> maybe_search_proposals(option_get(opts, :q))
+    |> maybe_filter_proposal_room(option_get(opts, :room_id))
     |> Repo.aggregate(:count, :id)
   end
 
@@ -931,7 +931,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_law_status(query, opts) do
-    case Keyword.get(opts, :status) do
+    case option_get(opts, :status) do
       nil ->
         query
 
@@ -944,7 +944,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_law_kind(query, opts) do
-    case Keyword.get(opts, :law_kind) do
+    case option_get(opts, :law_kind) do
       nil ->
         query
 
@@ -977,7 +977,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_role_enabled(query, opts) do
-    case Keyword.get(opts, :enabled) do
+    case option_get(opts, :enabled) do
       nil -> query
       "" -> query
       enabled -> where(query, [role], role.enabled == ^truthy?(enabled))
@@ -1005,7 +1005,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_assignment_status(query, opts) do
-    case Keyword.get(opts, :status) do
+    case option_get(opts, :status) do
       nil ->
         query
 
@@ -1022,7 +1022,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_proposal_status(query, opts) do
-    case Keyword.get(opts, :status) do
+    case option_get(opts, :status) do
       nil ->
         query
 
@@ -1039,7 +1039,7 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_proposal_type(query, opts) do
-    case Keyword.get(opts, :proposal_type) do
+    case option_get(opts, :proposal_type) do
       nil ->
         query
 
@@ -1084,12 +1084,24 @@ defmodule SentientwaveAutomata.Governance do
   end
 
   defp maybe_filter_snapshot_proposal(query, opts) do
-    case Keyword.get(opts, :proposal_id) do
+    case option_get(opts, :proposal_id) do
       nil -> query
       "" -> query
       proposal_id -> where(query, [snapshot], snapshot.proposal_id == ^proposal_id)
     end
   end
+
+  defp option_get(opts, key, default \\ nil)
+
+  defp option_get(opts, key, default) when is_list(opts) do
+    Keyword.get(opts, key, default)
+  end
+
+  defp option_get(opts, key, default) when is_map(opts) do
+    Map.get(opts, key, Map.get(opts, Atom.to_string(key), default))
+  end
+
+  defp option_get(_opts, _key, default), do: default
 
   defp resolve_voting_rule_snapshot do
     case current_voting_policy_law() do
