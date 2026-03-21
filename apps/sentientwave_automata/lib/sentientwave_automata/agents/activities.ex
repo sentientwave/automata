@@ -154,11 +154,15 @@ defmodule SentientwaveAutomata.Agents.Activities do
     room_id = Map.get(attrs, :room_id, "")
     plain_response = to_plain_text(response)
 
-    matrix_adapter().post_message(room_id, plain_response, %{
-      workflow_id: run.workflow_id,
-      run_id: run.id,
-      kind: "run_completion"
-    })
+    if String.trim(to_string(room_id)) == "" do
+      :ok
+    else
+      matrix_adapter().post_message(room_id, plain_response, %{
+        workflow_id: run.workflow_id,
+        run_id: run.id,
+        kind: "run_completion"
+      })
+    end
   end
 
   @spec persist_memory(Run.t(), map(), map(), String.t()) :: :ok

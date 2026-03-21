@@ -1,0 +1,91 @@
+<.admin_shell
+  flash={@flash}
+  title="Add Directory User"
+  subtitle="Create a new human, agent, or service identity. Automata will generate a strong password automatically."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/directory/users"} class="sw-btn sw-btn-ghost">Back to directory</a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Homeserver: {@status.homeserver_domain}</span>
+      <span class="sw-pill">Password policy: generated strong secret</span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Identity Details</h2>
+      <form action={~p"/directory/users"} method="post" class="sw-form-grid mt-5">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="user[admin]" value="false" />
+
+        <label class="sw-field">
+          <span>User Type</span>
+          <select name="user[kind]" class="sw-select">
+            <%= for {label, value} <- @directory_kind_options do %>
+              <option value={value}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field">
+          <span>Localpart</span>
+          <input
+            name="user[localpart]"
+            class="sw-input"
+            placeholder="amy, automata, service-bot"
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Display Name</span>
+          <input
+            name="user[display_name]"
+            class="sw-input"
+            placeholder="Leave blank to use Automata defaults"
+          />
+        </label>
+
+        <label class="sw-checkbox-row">
+          <input type="checkbox" name="user[admin]" value="true" />
+          <span>Grant Matrix admin role for human or service accounts</span>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Create User</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">What Happens Next</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Generated Password</p>
+          <p class="sw-card-copy">
+            Automata will generate a secure password and show it once after creation so you can hand it to the user.
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Matrix Reconciliation</p>
+          <p class="sw-card-copy">
+            The new account is reconciled into Matrix automatically. Agent users also get runtime records and wallet credentials.
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Service Accounts</p>
+          <p class="sw-card-copy">
+            Service users get Matrix identities only. They do not receive agent runtime settings, tools, or scheduled tasks.
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+</.admin_shell>

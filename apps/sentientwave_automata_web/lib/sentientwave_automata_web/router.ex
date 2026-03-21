@@ -39,6 +39,11 @@ defmodule SentientwaveAutomataWeb.Router do
     get "/", PageController, :home
     get "/dashboard", PageController, :dashboard
     get "/onboarding", PageController, :onboarding
+    get "/directory/users", PageController, :directory
+    get "/directory/users/new", PageController, :new_directory_user
+    get "/directory/users/:localpart", PageController, :directory_user
+    get "/directory/users/:localpart/tasks/new", PageController, :new_directory_task
+    get "/directory/users/:localpart/tasks/:id", PageController, :directory_task
     get "/settings/skills", PageController, :skills
     get "/settings/skills/new", PageController, :new_skill
     get "/settings/skills/:id", PageController, :skill
@@ -54,6 +59,27 @@ defmodule SentientwaveAutomataWeb.Router do
     post "/settings/llm/providers/:id", PageController, :update_llm_provider
     post "/settings/llm/providers/:id/default", PageController, :set_default_llm_provider
     delete "/settings/llm/providers/:id", PageController, :delete_llm_provider
+    post "/directory/users", PageController, :create_directory_user
+    post "/directory/users/:localpart", PageController, :update_directory_user
+
+    post "/directory/users/:localpart/rotate-password",
+         PageController,
+         :rotate_directory_user_password
+
+    delete "/directory/users/:localpart", PageController, :delete_directory_user
+
+    post "/directory/users/:localpart/agent-profile",
+         PageController,
+         :update_directory_agent_profile
+
+    post "/directory/users/:localpart/tool-permissions",
+         PageController,
+         :update_directory_tool_permission
+
+    post "/directory/users/:localpart/tasks", PageController, :create_directory_task
+    post "/directory/users/:localpart/tasks/:id", PageController, :update_directory_task
+    post "/directory/users/:localpart/tasks/:id/toggle", PageController, :toggle_directory_task
+    delete "/directory/users/:localpart/tasks/:id", PageController, :delete_directory_task
     post "/settings/skills", PageController, :create_skill
     post "/settings/skills/:id", PageController, :update_skill
     post "/settings/skills/:id/designations", PageController, :designate_skill

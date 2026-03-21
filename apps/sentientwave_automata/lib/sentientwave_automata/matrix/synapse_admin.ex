@@ -7,11 +7,11 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
   @membership_cache_key {:sentientwave_automata, :matrix_membership_reconcile}
   @invite_poll_cache_key {:sentientwave_automata, :matrix_invite_poll}
 
-  @spec reconcile_user(map()) :: :ok | {:error, term()}
-  def reconcile_user(user) do
+  @spec reconcile_user(map(), keyword()) :: :ok | {:error, term()}
+  def reconcile_user(user, opts \\ []) do
     case admin_token() do
       {:ok, token} ->
-        with :ok <- upsert_user(token, user),
+        with :ok <- upsert_user(token, user, opts),
              :ok <- ensure_default_room_membership(token, user) do
           :ok
         else
@@ -103,10 +103,11 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     end
   end
 
-  defp upsert_user(token, user) do
+  defp upsert_user(token, user, opts) do
     mxid = "@#{user.localpart}:#{matrix_domain()}"
     base = matrix_url()
     encoded_mxid = URI.encode_www_form(mxid)
+    force_password? = Keyword.get(opts, :force_password, false)
 
     with {:ok, exists?} <- user_exists?(token, encoded_mxid) do
       cond do
@@ -125,7 +126,7 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
           }
 
           payload =
-            if exists? and not reconcile_rotate_passwords?() do
+            if exists? and not force_password? and not reconcile_rotate_passwords?() do
               payload
             else
               Map.put(payload, "password", user.password)
@@ -418,12 +419,21 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
   end
 
   defp login_operator_user do
-    with {:error, :no_operator_access_token} <- operator_access_token(),
-         {:error, reason} <- login_operator_user_with_password() do
-      {:error, reason}
-    else
-      {:ok, token} -> {:ok, token}
-      {:error, reason} -> {:error, reason}
+    case operator_access_token() do
+      {:ok, token} ->
+        case validate_operator_token(token) do
+          :ok ->
+            {:ok, token}
+
+          {:error, _reason} ->
+            login_operator_user_with_password()
+        end
+
+      {:error, :no_operator_access_token} ->
+        login_operator_user_with_password()
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -447,6 +457,22 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
       {:error, :no_operator_access_token}
     end
   end
+
+  defp validate_operator_token(token) when is_binary(token) and token != "" do
+    case request(
+           :get,
+           "#{matrix_url()}/_matrix/client/v3/account/whoami",
+           auth_header(token),
+           nil
+         ) do
+      {:ok, 200, _body} -> :ok
+      {:ok, 401, _body} -> {:error, :invalid_operator_access_token}
+      {:ok, code, body} -> {:error, {:operator_token_validation_failed, code, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_operator_token(_), do: {:error, :invalid_operator_access_token}
 
   defp login_operator_user_with_password do
     payload = %{

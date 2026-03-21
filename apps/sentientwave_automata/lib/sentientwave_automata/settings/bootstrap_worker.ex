@@ -3,6 +3,7 @@ defmodule SentientwaveAutomata.Settings.BootstrapWorker do
   use GenServer
 
   alias SentientwaveAutomata.Agents
+  alias SentientwaveAutomata.Matrix.Directory
   alias SentientwaveAutomata.Settings
 
   def start_link(_opts), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
@@ -15,6 +16,7 @@ defmodule SentientwaveAutomata.Settings.BootstrapWorker do
 
   @impl true
   def handle_info(:bootstrap, state) do
+    Directory.seed_from_env()
     maybe_seed_llm_provider()
     maybe_seed_tools()
     maybe_grant_automata_privileged_tools()

@@ -188,6 +188,269 @@ defmodule SentientwaveAutomataWeb.PageHTML do
     end
   end
 
+  def directory_kind_label(:person), do: "Human"
+  def directory_kind_label("person"), do: "Human"
+  def directory_kind_label(:agent), do: "Agent"
+  def directory_kind_label("agent"), do: "Agent"
+  def directory_kind_label(:service), do: "Service"
+  def directory_kind_label("service"), do: "Service"
+  def directory_kind_label(_), do: "Unknown"
+
+  def directory_kind_class(:person), do: "is-neutral"
+  def directory_kind_class("person"), do: "is-neutral"
+  def directory_kind_class(:agent), do: "is-ok"
+  def directory_kind_class("agent"), do: "is-ok"
+  def directory_kind_class(:service), do: "is-warning"
+  def directory_kind_class("service"), do: "is-warning"
+  def directory_kind_class(_), do: "is-neutral"
+
+  def operational_status_class(:online), do: "is-ok"
+  def operational_status_class(:offline), do: "is-issue"
+  def operational_status_class(_), do: "is-neutral"
+
+  def tool_state_class(true), do: "is-ok"
+  def tool_state_class(false), do: "is-issue"
+  def tool_state_class(_), do: "is-neutral"
+
+  def tool_state_label(%{effective_allowed: true}), do: "Allowed"
+  def tool_state_label(%{effective_allowed: false}), do: "Blocked"
+  def tool_state_label(_), do: "Unknown"
+
+  def scheduled_task_type_label(:run_agent_prompt), do: "Run Agent Prompt"
+  def scheduled_task_type_label("run_agent_prompt"), do: "Run Agent Prompt"
+  def scheduled_task_type_label(:post_room_message), do: "Post Room Message"
+  def scheduled_task_type_label("post_room_message"), do: "Post Room Message"
+  def scheduled_task_type_label(_), do: "Task"
+
+  def scheduled_task_schedule_label(task) do
+    interval = Map.get(task, :schedule_interval) || Map.get(task, "schedule_interval") || 1
+    minute = pad_time(Map.get(task, :schedule_minute) || Map.get(task, "schedule_minute") || 0)
+    hour = pad_time(Map.get(task, :schedule_hour) || Map.get(task, "schedule_hour") || 0)
+    timezone = Map.get(task, :timezone) || Map.get(task, "timezone") || "Etc/UTC"
+
+    case Map.get(task, :schedule_type) || Map.get(task, "schedule_type") do
+      :hourly ->
+        "Every #{interval} hour(s) at minute #{minute} (#{timezone})"
+
+      "hourly" ->
+        "Every #{interval} hour(s) at minute #{minute} (#{timezone})"
+
+      :daily ->
+        "Every #{interval} day(s) at #{hour}:#{minute} (#{timezone})"
+
+      "daily" ->
+        "Every #{interval} day(s) at #{hour}:#{minute} (#{timezone})"
+
+      :weekly ->
+        weekday =
+          weekday_label(Map.get(task, :schedule_weekday) || Map.get(task, "schedule_weekday"))
+
+        "Every #{interval} week(s) on #{weekday} at #{hour}:#{minute} (#{timezone})"
+
+      "weekly" ->
+        weekday =
+          weekday_label(Map.get(task, :schedule_weekday) || Map.get(task, "schedule_weekday"))
+
+        "Every #{interval} week(s) on #{weekday} at #{hour}:#{minute} (#{timezone})"
+
+      _ ->
+        "Schedule not configured"
+    end
+  end
+
+  def metadata_json(nil), do: "{}"
+
+  def metadata_json(value) when is_map(value) do
+    Jason.encode!(value, pretty: true)
+  rescue
+    _ -> "{}"
+  end
+
+  def metadata_json(_), do: "{}"
+
+  def matrix_credentials_present?(nil), do: false
+
+  def matrix_credentials_present?(credentials) when is_map(credentials) do
+    localpart = Map.get(credentials, "localpart", Map.get(credentials, :localpart))
+    mxid = Map.get(credentials, "mxid", Map.get(credentials, :mxid))
+    password = Map.get(credentials, "password", Map.get(credentials, :password))
+
+    Enum.all?([localpart, mxid, password], fn
+      value when is_binary(value) -> String.trim(value) != ""
+      _ -> false
+    end)
+  end
+
+  def last_outcome_label(nil), do: "No runs yet"
+
+  def last_outcome_label(outcome) when is_map(outcome) do
+    outcome
+    |> Map.get("status", "unknown")
+    |> case do
+      "ok" -> "Last run succeeded"
+      "error" -> "Last run failed"
+      other -> "Last run: #{other}"
+    end
+  end
+
+  attr :task, :map, default: %{}
+  attr :action, :string, required: true
+  attr :title, :string, required: true
+  attr :submit_label, :string, required: true
+  attr :task_type_options, :list, required: true
+  attr :schedule_options, :list, required: true
+  attr :weekday_options, :list, required: true
+
+  def scheduled_task_form(assigns) do
+    ~H"""
+    <form action={@action} method="post" class="sw-form-grid mt-5">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+      <input type="hidden" name="task[enabled]" value="false" />
+
+      <label class="sw-field">
+        <span>Name</span>
+        <input
+          name="task[name]"
+          class="sw-input"
+          value={Map.get(@task, :name) || Map.get(@task, "name", "")}
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Task Type</span>
+        <select name="task[task_type]" class="sw-select">
+          <%= for {label, value} <- @task_type_options do %>
+            <option
+              value={value}
+              selected={
+                to_string(
+                  Map.get(@task, :task_type) || Map.get(@task, "task_type", "run_agent_prompt")
+                ) ==
+                  value
+              }
+            >
+              {label}
+            </option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-checkbox-row">
+        <input
+          type="checkbox"
+          name="task[enabled]"
+          value="true"
+          checked={Map.get(@task, :enabled, Map.get(@task, "enabled", true))}
+        />
+        <span>Enabled</span>
+      </label>
+
+      <label class="sw-field">
+        <span>Schedule Type</span>
+        <select name="task[schedule_type]" class="sw-select">
+          <%= for {label, value} <- @schedule_options do %>
+            <option
+              value={value}
+              selected={
+                to_string(Map.get(@task, :schedule_type) || Map.get(@task, "schedule_type", "daily")) ==
+                  value
+              }
+            >
+              {label}
+            </option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Interval</span>
+        <input
+          name="task[schedule_interval]"
+          class="sw-input"
+          type="number"
+          min="1"
+          value={Map.get(@task, :schedule_interval) || Map.get(@task, "schedule_interval", 1)}
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Hour</span>
+        <input
+          name="task[schedule_hour]"
+          class="sw-input"
+          type="number"
+          min="0"
+          max="23"
+          value={Map.get(@task, :schedule_hour) || Map.get(@task, "schedule_hour", "")}
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Minute</span>
+        <input
+          name="task[schedule_minute]"
+          class="sw-input"
+          type="number"
+          min="0"
+          max="59"
+          value={Map.get(@task, :schedule_minute) || Map.get(@task, "schedule_minute", 0)}
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Weekday</span>
+        <select name="task[schedule_weekday]" class="sw-select">
+          <option value="">Choose a weekday</option>
+          <%= for {label, value} <- @weekday_options do %>
+            <option
+              value={value}
+              selected={
+                to_string(Map.get(@task, :schedule_weekday) || Map.get(@task, "schedule_weekday", "")) ==
+                  value
+              }
+            >
+              {label}
+            </option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Timezone</span>
+        <input
+          name="task[timezone]"
+          class="sw-input"
+          value={Map.get(@task, :timezone) || Map.get(@task, "timezone", "Etc/UTC")}
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>Target Room ID</span>
+        <input
+          name="task[room_id]"
+          class="sw-input"
+          value={Map.get(@task, :room_id) || Map.get(@task, "room_id", "")}
+          placeholder="Optional for prompt tasks, required for room messages"
+        />
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>Prompt Body</span>
+        <textarea name="task[prompt_body]" class="sw-textarea" rows="8"><%= Map.get(@task, :prompt_body) || Map.get(@task, "prompt_body", "") %></textarea>
+      </label>
+
+      <label class="sw-field sw-field-span">
+        <span>Message Body</span>
+        <textarea name="task[message_body]" class="sw-textarea" rows="6"><%= Map.get(@task, :message_body) || Map.get(@task, "message_body", "") %></textarea>
+      </label>
+
+      <div class="sw-field-span sw-actions">
+        <button type="submit" class="sw-btn sw-btn-primary">{@submit_label}</button>
+      </div>
+    </form>
+    """
+  end
+
   defp service_class(status) when is_binary(status) do
     cond do
       String.starts_with?(status, "ok") -> "is-ok"
@@ -225,6 +488,27 @@ defmodule SentientwaveAutomataWeb.PageHTML do
   defp present?(value) when is_binary(value), do: String.trim(value) != ""
   defp present?(nil), do: false
   defp present?(_), do: true
+
+  defp pad_time(value) when is_integer(value),
+    do: value |> Integer.to_string() |> String.pad_leading(2, "0")
+
+  defp pad_time(_), do: "00"
+
+  defp weekday_label(1), do: "Monday"
+  defp weekday_label("1"), do: "Monday"
+  defp weekday_label(2), do: "Tuesday"
+  defp weekday_label("2"), do: "Tuesday"
+  defp weekday_label(3), do: "Wednesday"
+  defp weekday_label("3"), do: "Wednesday"
+  defp weekday_label(4), do: "Thursday"
+  defp weekday_label("4"), do: "Thursday"
+  defp weekday_label(5), do: "Friday"
+  defp weekday_label("5"), do: "Friday"
+  defp weekday_label(6), do: "Saturday"
+  defp weekday_label("6"), do: "Saturday"
+  defp weekday_label(7), do: "Sunday"
+  defp weekday_label("7"), do: "Sunday"
+  defp weekday_label(_), do: "Unknown"
 
   embed_templates "page_html/*"
 end
