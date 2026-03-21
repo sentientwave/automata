@@ -499,7 +499,8 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
   defp default_room_aliases do
     [
       System.get_env("MATRIX_MAIN_ROOM_ALIAS", "main"),
-      System.get_env("MATRIX_RANDOM_ROOM_ALIAS", "random")
+      System.get_env("MATRIX_RANDOM_ROOM_ALIAS", "random"),
+      System.get_env("MATRIX_GOVERNANCE_ROOM_ALIAS", "governance")
     ]
     |> Enum.map(&normalize_alias/1)
     |> Enum.reject(&(&1 == ""))

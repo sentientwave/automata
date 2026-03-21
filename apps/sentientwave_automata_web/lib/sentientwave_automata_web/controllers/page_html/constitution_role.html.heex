@@ -1,0 +1,250 @@
+<.admin_shell
+  flash={@flash}
+  title={"Role: #{Map.get(@role, :name, Map.get(@role, "name", "Unnamed role"))}"}
+  subtitle="Edit role metadata, assign members, and inspect the electorate history tied to this role."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-inline-actions">
+      <a href={~p"/constitution/roles"} class="sw-btn sw-btn-ghost">Back to roles</a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Slug: {Map.get(@role, :slug, Map.get(@role, "slug", "n/a"))}</span>
+      <span class={[
+        "sw-pill",
+        governance_role_status_class(Map.get(@role, :enabled, Map.get(@role, "enabled", true)))
+      ]}>
+        {governance_role_status_label(Map.get(@role, :enabled, Map.get(@role, "enabled", true)))}
+      </span>
+      <span class="sw-pill">Assignments: {length(@assignments)}</span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Role Configuration</h2>
+      <form action={~p"/constitution/roles/#{@role.id}"} method="post" class="sw-form-grid mt-5">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+        <label class="sw-field">
+          <span>Name</span>
+          <input
+            name="role[name]"
+            class="sw-input"
+            value={Map.get(@role, :name, Map.get(@role, "name", ""))}
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>Slug</span>
+          <input
+            name="role[slug]"
+            class="sw-input"
+            value={Map.get(@role, :slug, Map.get(@role, "slug", ""))}
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Description</span>
+          <input
+            name="role[description]"
+            class="sw-input"
+            value={Map.get(@role, :description, Map.get(@role, "description", ""))}
+          />
+        </label>
+
+        <label class="sw-checkbox-row">
+          <input
+            type="checkbox"
+            name="role[enabled]"
+            value="1"
+            checked={Map.get(@role, :enabled, Map.get(@role, "enabled", true))}
+          />
+          <span>Enabled</span>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Save Role</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Role Context</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Description</p>
+          <p class="sw-detail-value">
+            {Map.get(
+              @role,
+              :description,
+              Map.get(@role, "description", "No description recorded.")
+            )}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Metadata</p>
+          <pre class="sw-code-block"><code phx-no-curly-interpolation><%= pretty_json(Map.get(@role, :metadata, Map.get(@role, "metadata", %{}))) %></code></pre>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Electorate Guidance</p>
+          <p class="sw-detail-value">
+            Role-scoped proposals should snapshot the directory members that hold this role when the proposal opens.
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Assign Member</h2>
+          <p class="sw-card-copy">
+            Add a directory user to this role so they can vote on scoped proposals.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@assignable_users == []} class="sw-empty mt-5">
+        <h3>No directory users available</h3>
+        <p>Create directory users first, then assign them to this role.</p>
+      </div>
+
+      <form
+        :if={@assignable_users != []}
+        action={~p"/constitution/roles/#{@role.id}/assignments"}
+        method="post"
+        class="sw-form-grid mt-5"
+      >
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+        <label class="sw-field sw-field-span">
+          <span>Directory User</span>
+          <select name="role_assignment[user_id]" class="sw-select">
+            <option value="">Choose a member</option>
+            <%= for user <- @assignable_users do %>
+              <option value={user.id}>
+                {governance_member_label(user)} ({directory_kind_label(user.kind)})
+              </option>
+            <% end %>
+          </select>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Assign Role</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Assignments</h2>
+          <p class="sw-card-copy">
+            Keep a historical trail of who belonged to the role and when the assignment changed.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@assignments == []} class="sw-empty mt-5">
+        <h3>No assignments yet</h3>
+        <p>This role has no members assigned yet.</p>
+      </div>
+
+      <div :if={@assignments != []} class="sw-table-wrap mt-5">
+        <table class="sw-data-table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Kind</th>
+              <th>Status</th>
+              <th>Assigned</th>
+              <th>Revoked</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={assignment <- @assignments}>
+              <td>
+                <div class="sw-table-primary">{governance_role_assignment_name(assignment)}</div>
+                <div class="sw-table-secondary">
+                  {Map.get(
+                    Map.get(assignment, :user, Map.get(assignment, "user", %{})),
+                    :localpart,
+                    "n/a"
+                  )}
+                </div>
+              </td>
+              <td>
+                <span class="sw-pill">
+                  {directory_kind_label(
+                    Map.get(
+                      Map.get(assignment, :user, Map.get(assignment, "user", %{})),
+                      :kind,
+                      "unknown"
+                    )
+                  )}
+                </span>
+              </td>
+              <td>
+                <span class={[
+                  "sw-pill",
+                  governance_role_status_class(
+                    Map.get(assignment, :status, Map.get(assignment, "status", :active))
+                  )
+                ]}>
+                  {governance_role_status_label(
+                    Map.get(assignment, :status, Map.get(assignment, "status", :active))
+                  )}
+                </span>
+              </td>
+              <td>
+                {format_timestamp(
+                  Map.get(assignment, :assigned_at, Map.get(assignment, "assigned_at"))
+                )}
+              </td>
+              <td>
+                {format_timestamp(
+                  Map.get(assignment, :revoked_at, Map.get(assignment, "revoked_at"))
+                )}
+              </td>
+              <td>
+                <div class="sw-table-actions">
+                  <form
+                    :if={governance_role_assignment_active?(assignment)}
+                    action={
+                      ~p"/constitution/roles/#{@role.id}/assignments/#{assignment.id}/revoke"
+                    }
+                    method="post"
+                  >
+                    <input
+                      type="hidden"
+                      name="_csrf_token"
+                      value={Plug.CSRFProtection.get_csrf_token()}
+                    />
+                    <button type="submit" class="sw-btn sw-btn-danger sw-btn-small">
+                      Revoke
+                    </button>
+                  </form>
+                  <span
+                    :if={not governance_role_assignment_active?(assignment)}
+                    class="sw-table-secondary"
+                  >
+                    Historical entry
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+</.admin_shell>

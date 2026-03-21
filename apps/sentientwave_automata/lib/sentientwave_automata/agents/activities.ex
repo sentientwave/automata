@@ -12,6 +12,7 @@ defmodule SentientwaveAutomata.Agents.Activities do
   alias SentientwaveAutomata.Agents.Mention
   alias SentientwaveAutomata.Agents.RAG
   alias SentientwaveAutomata.Agents.Run
+  alias SentientwaveAutomata.Agents.Runtime
   alias SentientwaveAutomata.Repo
   require Logger
 
@@ -89,6 +90,11 @@ defmodule SentientwaveAutomata.Agents.Activities do
   def generate_response(%Run{} = run, attrs, context) do
     body = attrs |> Map.get(:input, %{}) |> Map.get(:body, "") |> sanitize_input()
     agent_slug = attrs |> Map.get(:metadata, %{}) |> Map.get(:agent_slug, "automata")
+    constitution_snapshot = constitution_snapshot_reference(run, attrs)
+
+    trace_context =
+      trace_context(run, attrs)
+      |> Map.merge(Runtime.constitution_snapshot_metadata(constitution_snapshot))
 
     case Client.generate_response(
            agent_id: run.agent_id,
@@ -96,7 +102,8 @@ defmodule SentientwaveAutomata.Agents.Activities do
            user_input: body,
            context_text: Map.get(context, :context_text, ""),
            room_id: Map.get(attrs, :room_id, ""),
-           trace_context: trace_context(run, attrs)
+           constitution_snapshot: constitution_snapshot,
+           trace_context: trace_context
          ) do
       {:ok, text} ->
         {:ok, text}
@@ -120,6 +127,8 @@ defmodule SentientwaveAutomata.Agents.Activities do
   defp trace_context(%Run{} = run, attrs) do
     input = Map.get(attrs, :input, %{})
     metadata = Map.get(attrs, :metadata, %{})
+    run_metadata = Map.get(run, :metadata, %{})
+    constitution_snapshot = constitution_snapshot_reference(run, attrs)
 
     %{
       run_id: run.id,
@@ -137,7 +146,19 @@ defmodule SentientwaveAutomata.Agents.Activities do
         Map.get(attrs, :remote_ip) ||
           Map.get(input, :remote_ip) ||
           Map.get(metadata, "remote_ip") ||
-          Map.get(metadata, :remote_ip)
+          Map.get(metadata, :remote_ip),
+      constitution_snapshot_id:
+        Map.get(attrs, :constitution_snapshot_id) ||
+          Map.get(attrs, "constitution_snapshot_id") ||
+          Map.get(run_metadata, "constitution_snapshot_id") ||
+          Map.get(run_metadata, :constitution_snapshot_id) ||
+          Map.get(constitution_snapshot, :id),
+      constitution_version:
+        Map.get(attrs, :constitution_version) ||
+          Map.get(attrs, "constitution_version") ||
+          Map.get(run_metadata, "constitution_version") ||
+          Map.get(run_metadata, :constitution_version) ||
+          Map.get(constitution_snapshot, :version)
     }
   end
 
@@ -327,6 +348,15 @@ defmodule SentientwaveAutomata.Agents.Activities do
     |> String.replace(~r/<[^>]+>/u, "")
     |> String.replace(~r/\n{3,}/u, "\n\n")
     |> String.trim()
+  end
+
+  defp constitution_snapshot_reference(%Run{} = run, attrs) do
+    attrs
+    |> Map.take([:constitution_snapshot_id, :constitution_version])
+    |> Map.merge(
+      Map.take(Map.get(run, :metadata, %{}), ["constitution_snapshot_id", "constitution_version"])
+    )
+    |> Runtime.constitution_snapshot_reference()
   end
 
   defp tokenize(text) do

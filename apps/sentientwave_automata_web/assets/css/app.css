@@ -347,6 +347,32 @@
   padding: 1rem 1.1rem;
 }
 
+.sw-constitution-hero {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--sw-primary-border);
+  background:
+    radial-gradient(420px 180px at 100% 0%, rgba(116, 178, 165, 0.1) 0%, rgba(116, 178, 165, 0) 70%),
+    linear-gradient(180deg, var(--sw-panel) 0%, var(--sw-panel-soft) 100%);
+}
+
+.sw-constitution-hero::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -70px;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(116, 178, 165, 0.14) 0%, rgba(116, 178, 165, 0) 72%);
+  pointer-events: none;
+}
+
+.sw-constitution-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
 .sw-card-title {
   margin: 0;
   font-size: 1.05rem;

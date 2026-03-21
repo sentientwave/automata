@@ -44,6 +44,12 @@ defmodule SentientwaveAutomataWeb.Router do
     get "/directory/users/:localpart", PageController, :directory_user
     get "/directory/users/:localpart/tasks/new", PageController, :new_directory_task
     get "/directory/users/:localpart/tasks/:id", PageController, :directory_task
+    get "/constitution", PageController, :constitution
+    get "/constitution/laws/:id", PageController, :constitution_law
+    get "/constitution/proposals/new/:proposal_type", PageController, :new_constitution_proposal
+    get "/constitution/proposals/:id", PageController, :constitution_proposal
+    get "/constitution/roles", PageController, :constitution_roles
+    get "/constitution/roles/:id", PageController, :constitution_role
     get "/settings/skills", PageController, :skills
     get "/settings/skills/new", PageController, :new_skill
     get "/settings/skills/:id", PageController, :skill
@@ -80,6 +86,15 @@ defmodule SentientwaveAutomataWeb.Router do
     post "/directory/users/:localpart/tasks/:id", PageController, :update_directory_task
     post "/directory/users/:localpart/tasks/:id/toggle", PageController, :toggle_directory_task
     delete "/directory/users/:localpart/tasks/:id", PageController, :delete_directory_task
+    post "/constitution/proposals", PageController, :create_constitution_proposal
+    post "/constitution/roles", PageController, :create_constitution_role
+    post "/constitution/roles/:id", PageController, :update_constitution_role
+    post "/constitution/roles/:id/assignments", PageController, :assign_constitution_role
+
+    post "/constitution/roles/:id/assignments/:assignment_id/revoke",
+         PageController,
+         :revoke_constitution_role_assignment
+
     post "/settings/skills", PageController, :create_skill
     post "/settings/skills/:id", PageController, :update_skill
     post "/settings/skills/:id/designations", PageController, :designate_skill

@@ -1,0 +1,212 @@
+<.admin_shell
+  flash={@flash}
+  title={"Law: #{@law.name}"}
+  subtitle="Inspect the published law text, review proposal history, and start a new amendment or repeal proposal."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-inline-actions">
+      <a href={~p"/constitution"} class="sw-btn sw-btn-ghost">Back to constitution</a>
+      <a
+        href={~p"/constitution/proposals/new/amend?law_id=#{@law.id}"}
+        class="sw-btn sw-btn-primary"
+      >
+        Propose Amendment
+      </a>
+      <a
+        href={~p"/constitution/proposals/new/repeal?law_id=#{@law.id}"}
+        class="sw-btn sw-btn-danger"
+      >
+        Propose Repeal
+      </a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Slug: {@law.slug}</span>
+      <span class="sw-pill">Kind: {governance_law_kind_label(@law.law_kind)}</span>
+      <span class={["sw-pill", governance_law_status_class(@law.status)]}>
+        {governance_law_status_label(@law.status)}
+      </span>
+      <span class="sw-pill">Version: {Map.get(@law, :version, Map.get(@law, "version", 1))}</span>
+      <span class="sw-pill">
+        Position: {Map.get(@law, :position, Map.get(@law, "position", 0))}
+      </span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Published Law</h2>
+      <p class="sw-card-copy mt-4">
+        This page is read-only. Change the text by opening a proposal from here.
+      </p>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Name</p>
+          <p class="sw-detail-value">{@law.name}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Law Kind</p>
+          <p class="sw-detail-value">{governance_law_kind_label(@law.law_kind)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Summary</p>
+          <p class="sw-detail-value">{governance_law_summary(@law)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Markdown Body</p>
+          <pre class="sw-code-block"><code phx-no-curly-interpolation><%= @law.markdown_body %></code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Metadata And Snapshots</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Ratified At</p>
+          <p class="sw-detail-value">
+            {format_timestamp(Map.get(@law, :ratified_at, Map.get(@law, "ratified_at")))}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Repealed At</p>
+          <p class="sw-detail-value">
+            {format_timestamp(Map.get(@law, :repealed_at, Map.get(@law, "repealed_at")))}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Current Constitution Snapshot</p>
+          <p class="sw-detail-value">{governance_snapshot_label(@current_snapshot)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Stored Metadata</p>
+          <pre class="sw-code-block"><code phx-no-curly-interpolation><%= pretty_json(Map.get(@law, :metadata, Map.get(@law, "metadata", %{}))) %></code></pre>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Proposal History</h2>
+          <p class="sw-card-copy">
+            Keep a transparent paper trail of how this law evolved over time.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@proposals == []} class="sw-empty mt-5">
+        <h3>No proposals yet</h3>
+        <p>This law has not been amended or repealed through a proposal yet.</p>
+      </div>
+
+      <div :if={@proposals != []} class="sw-table-wrap mt-5">
+        <table class="sw-data-table">
+          <thead>
+            <tr>
+              <th>Proposal</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Opened</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={proposal <- @proposals}>
+              <td>
+                <div class="sw-table-primary">
+                  {Map.get(proposal, :reference, "unreferenced")}
+                </div>
+                <div class="sw-table-secondary">
+                  {Map.get(proposal, :name, "Unnamed proposal")}
+                </div>
+              </td>
+              <td>{governance_proposal_type_label(Map.get(proposal, :proposal_type))}</td>
+              <td>
+                <span class={[
+                  "sw-pill",
+                  governance_proposal_status_class(Map.get(proposal, :status))
+                ]}>
+                  {governance_proposal_status_label(Map.get(proposal, :status))}
+                </span>
+              </td>
+              <td>
+                {format_timestamp(Map.get(proposal, :opened_at, Map.get(proposal, "opened_at")))}
+              </td>
+              <td>
+                <div class="sw-table-actions">
+                  <a
+                    href={~p"/constitution/proposals/#{proposal.id}"}
+                    class="sw-btn sw-btn-ghost sw-btn-small"
+                  >
+                    Open
+                  </a>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Snapshot History</h2>
+          <p class="sw-card-copy">
+            When the constitution publishes a new version, the prompt layer changes for future runs only.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@snapshots == []} class="sw-empty mt-5">
+        <h3>No snapshots recorded</h3>
+        <p>The first approved proposal will create the initial immutable snapshot.</p>
+      </div>
+
+      <div :if={@snapshots != []} class="sw-table-wrap mt-5">
+        <table class="sw-data-table">
+          <thead>
+            <tr>
+              <th>Snapshot</th>
+              <th>Published</th>
+              <th>Law Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={snapshot <- @snapshots}>
+              <td>
+                <div class="sw-table-primary">{governance_snapshot_label(snapshot)}</div>
+                <div class="sw-table-secondary">
+                  Proposal: {Map.get(
+                    snapshot,
+                    :proposal_reference,
+                    Map.get(snapshot, "proposal_reference", "n/a")
+                  )}
+                </div>
+              </td>
+              <td>
+                {format_timestamp(
+                  Map.get(snapshot, :published_at, Map.get(snapshot, "published_at"))
+                )}
+              </td>
+              <td>{Map.get(snapshot, :law_count, Map.get(snapshot, "law_count", 0))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+</.admin_shell>

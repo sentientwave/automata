@@ -25,6 +25,12 @@ defmodule SentientwaveAutomata.System.Status do
       matrix_admin_user: Map.get(info, :matrix_admin_user, ""),
       matrix_admin_password: Map.get(info, :matrix_admin_password, ""),
       room_alias: Map.get(info, :room_alias, ""),
+      governance_room_alias:
+        Map.get(
+          info,
+          :governance_room_alias,
+          env("MATRIX_GOVERNANCE_ROOM_ALIAS", "governance")
+        ),
       invite_password: Map.get(info, :invite_password, ""),
       invite_users: env("MATRIX_INVITE_USERS", ""),
       homeserver_domain: env("MATRIX_HOMESERVER_DOMAIN", "localhost"),
@@ -65,6 +71,7 @@ defmodule SentientwaveAutomata.System.Status do
           "matrix admin user" -> Map.put(acc, :matrix_admin_user, value)
           "matrix admin password" -> Map.put(acc, :matrix_admin_password, value)
           "room alias" -> Map.put(acc, :room_alias, value)
+          "governance room alias" -> Map.put(acc, :governance_room_alias, value)
           "invite password" -> Map.put(acc, :invite_password, value)
           "automata url" -> Map.put(acc, :automata_url, value)
           _ -> acc

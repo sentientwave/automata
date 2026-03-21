@@ -1,0 +1,244 @@
+<.admin_shell
+  flash={@flash}
+  title="Constitution"
+  subtitle="Publish laws, manage governance roles, and review proposal history before anything changes agent behavior."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Constitution Overview</h2>
+        <p class="sw-card-copy">
+          The active constitution is a published snapshot of laws that all agent reasoning must follow.
+        </p>
+      </div>
+      <div class="sw-inline-actions">
+        <a href={~p"/constitution/proposals/new/create"} class="sw-btn sw-btn-primary">
+          New Proposal
+        </a>
+        <a href={~p"/constitution/roles"} class="sw-btn sw-btn-ghost">Manage Roles</a>
+      </div>
+    </div>
+
+    <div class="sw-kpi-grid mt-5">
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Filtered laws</p>
+        <p class="sw-kpi-value">{@filtered_law_count}</p>
+        <p class="sw-kpi-copy">Current laws after applying the search and filter controls.</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Published laws</p>
+        <p class="sw-kpi-value">{@total_law_count}</p>
+        <p class="sw-kpi-copy">All active and repealed laws retained in the catalog.</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Active laws</p>
+        <p class="sw-kpi-value">{@active_law_count}</p>
+        <p class="sw-kpi-copy">Only active laws are injected into future agent reasoning.</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Open proposals</p>
+        <p class="sw-kpi-value">{@open_proposal_count}</p>
+        <p class="sw-kpi-copy">Matrix vote windows currently waiting for a result.</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Governance roles</p>
+        <p class="sw-kpi-value">{@role_count}</p>
+        <p class="sw-kpi-copy">{governance_snapshot_label(@snapshot)}</p>
+      </article>
+    </div>
+
+    <div :if={not @governance_available?} class="sw-alert sw-alert-warning mt-5">
+      Governance backend is not available yet, so the pages render as a ready UI shell until the core context lands.
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Search Laws</h2>
+        <p class="sw-card-copy">
+          Filter laws by text, status, or law kind to find the exact governing text you need.
+        </p>
+      </div>
+      <a href={~p"/constitution"} class="sw-btn sw-btn-ghost">Reset</a>
+    </div>
+
+    <form action={~p"/constitution"} method="get" class="sw-form-grid mt-5">
+      <label class="sw-field sw-field-span">
+        <span>Search</span>
+        <input
+          name="filters[q]"
+          class="sw-input"
+          value={@filter_form[:q].value}
+          placeholder="Search by law name, slug, or markdown text"
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Status</span>
+        <select name="filters[status]" class="sw-select">
+          <%= for {label, value} <- @governance_law_status_options do %>
+            <option value={value} selected={@filter_form[:status].value == value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <label class="sw-field">
+        <span>Law Kind</span>
+        <select name="filters[law_kind]" class="sw-select">
+          <%= for {label, value} <- @governance_law_kind_options do %>
+            <option value={value} selected={@filter_form[:law_kind].value == value}>
+              {label}
+            </option>
+          <% end %>
+        </select>
+      </label>
+
+      <div class="sw-actions sw-field-span">
+        <button type="submit" class="sw-btn sw-btn-primary">Apply Filters</button>
+      </div>
+    </form>
+
+    <div :if={@active_filters != []} class="sw-pill-list mt-4">
+      <span :for={label <- @active_filters} class="sw-pill">{label}</span>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Published Laws</h2>
+        <p class="sw-card-copy">
+          Laws are read-only here. Open one to inspect its snapshot history or start a proposal.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@laws == []} class="sw-empty mt-5">
+      <h3>No laws found</h3>
+      <p>Create the first proposal to publish the initial constitution snapshot.</p>
+    </div>
+
+    <div :if={@laws != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Law</th>
+            <th>Kind</th>
+            <th>Status</th>
+            <th>Version</th>
+            <th>Position</th>
+            <th>Summary</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={law <- @laws}>
+            <td>
+              <div class="sw-table-primary">{law.name}</div>
+              <div class="sw-table-secondary">{law.slug}</div>
+            </td>
+            <td>
+              <span class="sw-pill">{governance_law_kind_label(law.law_kind)}</span>
+            </td>
+            <td>
+              <span class={["sw-pill", governance_law_status_class(law.status)]}>
+                {governance_law_status_label(law.status)}
+              </span>
+            </td>
+            <td>{Map.get(law, :version, Map.get(law, "version", 1))}</td>
+            <td>{Map.get(law, :position, Map.get(law, "position", 0))}</td>
+            <td>{governance_law_summary(law)}</td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/constitution/laws/#{law.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Open
+                </a>
+                <a
+                  href={~p"/constitution/proposals/new/amend?law_id=#{law.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Amend
+                </a>
+                <a
+                  href={~p"/constitution/proposals/new/repeal?law_id=#{law.id}"}
+                  class="sw-btn sw-btn-danger sw-btn-small"
+                >
+                  Repeal
+                </a>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Recent Proposals</h2>
+        <p class="sw-card-copy">
+          Track what is open right now and inspect completed changes from the same governance workspace.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@proposals == []} class="sw-empty mt-5">
+      <h3>No proposals yet</h3>
+      <p>Open a proposal to start a Matrix vote and publish the next constitution snapshot.</p>
+    </div>
+
+    <div :if={@proposals != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Proposal</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Scope</th>
+            <th>Rule</th>
+            <th>Votes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={proposal <- @proposals}>
+            <td>
+              <div class="sw-table-primary">{Map.get(proposal, :reference, "unreferenced")}</div>
+              <div class="sw-table-secondary">{Map.get(proposal, :name, "Unnamed proposal")}</div>
+            </td>
+            <td>{governance_proposal_type_label(Map.get(proposal, :proposal_type))}</td>
+            <td>
+              <span class={[
+                "sw-pill",
+                governance_proposal_status_class(Map.get(proposal, :status))
+              ]}>
+                {governance_proposal_status_label(Map.get(proposal, :status))}
+              </span>
+            </td>
+            <td>{Map.get(proposal, :voting_scope, "all_members")}</td>
+            <td>{governance_rule_label(Map.get(proposal, :voting_rule_snapshot, %{}))}</td>
+            <td>{governance_vote_tally_label(Map.get(proposal, :vote_tally, %{}))}</td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/constitution/proposals/#{proposal.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Open
+                </a>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</.admin_shell>

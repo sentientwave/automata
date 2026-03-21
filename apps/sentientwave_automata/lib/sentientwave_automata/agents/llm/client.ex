@@ -6,6 +6,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
   require Logger
   alias SentientwaveAutomata.Agents
   alias SentientwaveAutomata.Agents.LLM.TraceRecorder
+  alias SentientwaveAutomata.Agents.Runtime
   alias SentientwaveAutomata.Agents.Tools.Executor
   alias SentientwaveAutomata.Settings
 
@@ -22,6 +23,11 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
     agent_id = Keyword.get(opts, :agent_id)
     context_text = Keyword.get(opts, :context_text, "") |> to_string() |> String.trim()
     trace_context = Keyword.get(opts, :trace_context, %{})
+    constitution_snapshot = Keyword.get(opts, :constitution_snapshot)
+
+    constitution_prompt_text =
+      Keyword.get(opts, :constitution_prompt_text) ||
+        Runtime.constitution_prompt_text(constitution_snapshot)
 
     provider_opts =
       [
@@ -44,6 +50,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
           "content" => system_prompt(agent_slug)
         }
       ] ++
+        constitution_messages(constitution_prompt_text) ++
         skill_messages(agent_id) ++
         context_messages(context_text) ++
         [%{"role" => "user", "content" => user_prompt(user_input)}]
@@ -83,6 +90,26 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
     |> String.trim()
     |> String.slice(0, @max_reply_chars)
   end
+
+  defp constitution_messages(prompt_text) when is_binary(prompt_text) do
+    trimmed = String.trim(prompt_text)
+
+    if trimmed == "" do
+      []
+    else
+      [
+        %{
+          "role" => "system",
+          "content" =>
+            "Company constitution and governance laws.\n\n" <>
+              "These rules are binding for all reasoning, planning, and tool use.\n\n" <>
+              trimmed
+        }
+      ]
+    end
+  end
+
+  defp constitution_messages(_), do: []
 
   defp complete_with_optional_tools(module, base_messages, opts) do
     available_tools = Executor.available_tools(Keyword.get(opts, :agent_id))

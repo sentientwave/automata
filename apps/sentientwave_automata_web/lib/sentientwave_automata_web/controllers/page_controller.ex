@@ -74,6 +74,50 @@ defmodule SentientwaveAutomataWeb.PageController do
     {"Private Message", "private_message"},
     {"Unknown", "unknown"}
   ]
+  @governance_law_status_options [
+    {"Any status", ""},
+    {"Active", "active"},
+    {"Repealed", "repealed"}
+  ]
+  @governance_law_kind_options [
+    {"Any kind", ""},
+    {"General", "general"},
+    {"Voting Policy", "voting_policy"}
+  ]
+  @governance_law_kind_choice_options [
+    {"General", "general"},
+    {"Voting Policy", "voting_policy"}
+  ]
+  @governance_role_status_options [
+    {"Any status", ""},
+    {"Enabled", "true"},
+    {"Disabled", "false"}
+  ]
+  @governance_proposal_type_options [
+    {"Create", "create"},
+    {"Amend", "amend"},
+    {"Repeal", "repeal"}
+  ]
+  @governance_proposal_status_options [
+    {"Any status", ""},
+    {"Open", "open"},
+    {"Approved", "approved"},
+    {"Rejected", "rejected"},
+    {"Cancelled", "cancelled"}
+  ]
+  @governance_voting_scope_options [
+    {"All members", "all_members"},
+    {"Role subset", "role_subset"}
+  ]
+  @governance_approval_mode_options [
+    {"Majority of cast votes", "majority"},
+    {"Supermajority of cast votes", "supermajority"}
+  ]
+  @governance_vote_choice_options [
+    {"Approve", "approve"},
+    {"Reject", "reject"},
+    {"Abstain", "abstain"}
+  ]
 
   def home(conn, _params), do: redirect(conn, to: ~p"/dashboard")
 
@@ -194,6 +238,265 @@ defmodule SentientwaveAutomataWeb.PageController do
         conn
         |> put_flash(:error, "Only agent users can have scheduled tasks.")
         |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def constitution(conn, params) do
+    status = Status.summary()
+    {law_filters, law_filter_form} = governance_law_filters_from_params(params)
+    laws = governance_list_laws(law_filters)
+    proposals = governance_list_proposals(%{})
+    roles = governance_list_roles(%{})
+    snapshot = governance_current_constitution_snapshot()
+
+    render(conn, :constitution,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("constitution"),
+      laws: laws,
+      proposals: proposals,
+      roles: roles,
+      snapshot: snapshot,
+      filtered_law_count: length(laws),
+      total_law_count: governance_total_law_count(),
+      active_law_count: Enum.count(laws, &governance_law_active?/1),
+      open_proposal_count: Enum.count(proposals, &governance_proposal_open?/1),
+      role_count: length(roles),
+      filter_form: law_filter_form,
+      active_filters: active_governance_law_filters(law_filters),
+      governance_law_status_options: @governance_law_status_options,
+      governance_law_kind_options: @governance_law_kind_options,
+      governance_available?: governance_available?()
+    )
+  end
+
+  def constitution_law(conn, %{"id" => id}) do
+    status = Status.summary()
+
+    case governance_get_law(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Law not found.")
+        |> redirect(to: ~p"/constitution")
+
+      law ->
+        render(conn, :constitution_law,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("constitution"),
+          law: law,
+          proposals: governance_law_proposals(law),
+          snapshots: governance_law_snapshots(law),
+          current_snapshot: governance_current_constitution_snapshot(),
+          governance_available?: governance_available?()
+        )
+    end
+  end
+
+  def constitution_proposal(conn, %{"id" => id}) do
+    status = Status.summary()
+
+    case governance_get_proposal(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Proposal not found.")
+        |> redirect(to: ~p"/constitution")
+
+      proposal ->
+        render(conn, :constitution_proposal,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("constitution"),
+          proposal: proposal,
+          votes: governance_proposal_votes(proposal),
+          electorates: governance_proposal_electorates(proposal),
+          role_choices: governance_proposal_roles(proposal),
+          vote_tally: governance_vote_tally(proposal),
+          proposal_status_options: @governance_proposal_status_options,
+          governance_available?: governance_available?()
+        )
+    end
+  end
+
+  def new_constitution_proposal(conn, %{"proposal_type" => proposal_type} = params) do
+    status = Status.summary()
+    proposal_type = normalize_governance_proposal_type(proposal_type)
+    linked_law = maybe_governance_get_law(Map.get(params, "law_id"))
+
+    render(conn, :new_constitution_proposal,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("constitution"),
+      proposal_type: proposal_type,
+      proposal_type_label: governance_proposal_type_label(proposal_type),
+      linked_law: linked_law,
+      laws: governance_list_laws(%{}),
+      roles: governance_list_roles(%{}),
+      voting_scope_options: @governance_voting_scope_options,
+      proposal_type_options: @governance_proposal_type_options,
+      law_kind_options: @governance_law_kind_choice_options,
+      approval_mode_options: @governance_approval_mode_options,
+      vote_choice_options: @governance_vote_choice_options,
+      governance_available?: governance_available?()
+    )
+  end
+
+  def create_constitution_proposal(conn, %{"proposal" => proposal_params}) do
+    attrs = sanitize_constitution_proposal_params(proposal_params)
+
+    case governance_open_proposal(attrs) do
+      {:ok, proposal} ->
+        conn
+        |> put_flash(:info, "Proposal created.")
+        |> redirect(to: ~p"/constitution/proposals/#{proposal.id}")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, governance_error_message(reason, "Could not create proposal."))
+        |> redirect(
+          to:
+            ~p"/constitution/proposals/new/#{Map.get(proposal_params, "proposal_type", "create")}"
+        )
+    end
+  end
+
+  def create_constitution_proposal(conn, _params) do
+    conn
+    |> put_flash(:error, "Invalid proposal payload.")
+    |> redirect(to: ~p"/constitution")
+  end
+
+  def constitution_roles(conn, params) do
+    status = Status.summary()
+    {role_filters, role_filter_form} = governance_role_filters_from_params(params)
+    roles = governance_list_roles(role_filters)
+
+    render(conn, :constitution_roles,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("constitution"),
+      roles: roles,
+      filtered_role_count: length(roles),
+      total_role_count: governance_total_role_count(),
+      active_role_count: Enum.count(roles, &governance_role_enabled?/1),
+      filter_form: role_filter_form,
+      active_filters: active_governance_role_filters(role_filters),
+      role_enabled_options: @governance_role_status_options,
+      governance_available?: governance_available?()
+    )
+  end
+
+  def constitution_role(conn, %{"id" => id}) do
+    status = Status.summary()
+    users = Directory.list_users()
+
+    case governance_get_role(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Role not found.")
+        |> redirect(to: ~p"/constitution/roles")
+
+      role ->
+        render(conn, :constitution_role,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("constitution"),
+          role: role,
+          assignments: governance_role_assignments(role),
+          assignable_users: users,
+          governance_available?: governance_available?()
+        )
+    end
+  end
+
+  def create_constitution_role(conn, %{"role" => role_params}) do
+    attrs = sanitize_constitution_role_params(role_params)
+
+    case governance_create_role(attrs) do
+      {:ok, role} ->
+        conn
+        |> put_flash(:info, "Role created.")
+        |> redirect(to: ~p"/constitution/roles/#{role.id}")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, governance_error_message(reason, "Could not create role."))
+        |> redirect(to: ~p"/constitution/roles")
+    end
+  end
+
+  def create_constitution_role(conn, _params) do
+    conn
+    |> put_flash(:error, "Invalid role payload.")
+    |> redirect(to: ~p"/constitution/roles")
+  end
+
+  def update_constitution_role(conn, %{"id" => id, "role" => role_params}) do
+    attrs = sanitize_constitution_role_params(role_params)
+
+    case governance_get_role(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Role not found.")
+        |> redirect(to: ~p"/constitution/roles")
+
+      role ->
+        case governance_update_role(role, attrs) do
+          {:ok, updated_role} ->
+            conn
+            |> put_flash(:info, "Role updated.")
+            |> redirect(to: ~p"/constitution/roles/#{updated_role.id}")
+
+          {:error, reason} ->
+            conn
+            |> put_flash(:error, governance_error_message(reason, "Could not update role."))
+            |> redirect(to: ~p"/constitution/roles/#{id}")
+        end
+    end
+  end
+
+  def update_constitution_role(conn, %{"id" => id}) do
+    conn
+    |> put_flash(:error, "Invalid role payload.")
+    |> redirect(to: ~p"/constitution/roles/#{id}")
+  end
+
+  def assign_constitution_role(conn, %{"id" => id, "role_assignment" => assignment_params}) do
+    attrs = sanitize_constitution_role_assignment_params(assignment_params)
+
+    case governance_assign_role(id, attrs) do
+      {:ok, _assignment} ->
+        conn
+        |> put_flash(:info, "Role assigned.")
+        |> redirect(to: ~p"/constitution/roles/#{id}")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, governance_error_message(reason, "Could not assign role."))
+        |> redirect(to: ~p"/constitution/roles/#{id}")
+    end
+  end
+
+  def assign_constitution_role(conn, %{"id" => id}) do
+    conn
+    |> put_flash(:error, "Choose a directory user first.")
+    |> redirect(to: ~p"/constitution/roles/#{id}")
+  end
+
+  def revoke_constitution_role_assignment(
+        conn,
+        %{"id" => id, "assignment_id" => assignment_id}
+      ) do
+    case governance_revoke_role_assignment(id, assignment_id) do
+      {:ok, _assignment} ->
+        conn
+        |> put_flash(:info, "Role assignment revoked.")
+        |> redirect(to: ~p"/constitution/roles/#{id}")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, governance_error_message(reason, "Could not revoke assignment."))
+        |> redirect(to: ~p"/constitution/roles/#{id}")
     end
   end
 
@@ -1106,6 +1409,12 @@ defmodule SentientwaveAutomataWeb.PageController do
         href: "/directory/users",
         active: active == "directory"
       },
+      %{
+        id: "constitution",
+        label: "Constitution",
+        href: "/constitution",
+        active: active == "constitution"
+      },
       %{id: "skills", label: "Skills", href: "/settings/skills", active: active == "skills"},
       %{id: "llm", label: "LLM Providers", href: "/settings/llm", active: active == "llm"},
       %{
@@ -1455,6 +1764,422 @@ defmodule SentientwaveAutomataWeb.PageController do
       }
     end)
     |> Enum.sort_by(&{&1.label, &1.tool_name})
+  end
+
+  defp governance_available? do
+    Code.ensure_loaded?(SentientwaveAutomata.Governance) and
+      function_exported?(SentientwaveAutomata.Governance, :list_laws, 1)
+  end
+
+  defp maybe_governance_get_law(nil), do: nil
+  defp maybe_governance_get_law(id) when is_binary(id) and id != "", do: governance_get_law(id)
+  defp maybe_governance_get_law(_), do: nil
+
+  defp governance_proposal_type_label(:create), do: "Create Proposal"
+  defp governance_proposal_type_label(:amend), do: "Amend Proposal"
+  defp governance_proposal_type_label(:repeal), do: "Repeal Proposal"
+  defp governance_proposal_type_label("create"), do: "Create Proposal"
+  defp governance_proposal_type_label("amend"), do: "Amend Proposal"
+  defp governance_proposal_type_label("repeal"), do: "Repeal Proposal"
+  defp governance_proposal_type_label(_), do: "Create Proposal"
+
+  defp governance_role_assignments(role) when is_map(role) do
+    role
+    |> Map.get(:assignments, Map.get(role, "assignments", []))
+    |> List.wrap()
+  end
+
+  defp governance_role_assignments(_), do: []
+
+  defp governance_error_message(%Ecto.Changeset{} = changeset, fallback),
+    do: skill_error_message(changeset, fallback)
+
+  defp governance_error_message(%{} = errors, fallback) do
+    case Enum.at(Map.to_list(errors), 0) do
+      {field, message} -> "#{field} #{message}"
+      _ -> fallback
+    end
+  end
+
+  defp governance_error_message(reason, _fallback) when is_binary(reason), do: reason
+  defp governance_error_message(_reason, fallback), do: fallback
+
+  defp governance_total_law_count, do: governance_list_laws(%{}) |> length()
+  defp governance_total_role_count, do: governance_list_roles(%{}) |> length()
+
+  defp governance_list_laws(filters) when is_list(filters) or is_map(filters),
+    do: governance_call(:list_laws, [filters], [])
+
+  defp governance_list_roles(filters) when is_list(filters) or is_map(filters),
+    do: governance_call(:list_roles, [filters], [])
+
+  defp governance_list_proposals(filters) when is_list(filters) or is_map(filters),
+    do: governance_call(:list_proposals, [filters], [])
+
+  defp governance_get_law(id) when is_binary(id) and id != "",
+    do: governance_call(:get_law, [id], nil)
+
+  defp governance_get_law(_), do: nil
+
+  defp governance_get_proposal(id) when is_binary(id) and id != "",
+    do: governance_call(:get_proposal, [id], nil)
+
+  defp governance_get_proposal(_), do: nil
+
+  defp governance_get_role(id) when is_binary(id) and id != "",
+    do: governance_call(:get_role, [id], nil)
+
+  defp governance_get_role(_), do: nil
+
+  defp governance_open_proposal(attrs) when is_map(attrs),
+    do: governance_call(:open_law_proposal, [attrs], {:error, :unavailable})
+
+  defp governance_create_role(attrs) when is_map(attrs),
+    do: governance_call(:create_role, [attrs], {:error, :unavailable})
+
+  defp governance_update_role(role, attrs) when is_map(attrs),
+    do: governance_call(:update_role, [role, attrs], {:error, :unavailable})
+
+  defp governance_assign_role(role_id, attrs) when is_map(attrs),
+    do: governance_call(:assign_role, [role_id, attrs], {:error, :unavailable})
+
+  defp governance_revoke_role_assignment(role_id, assignment_id),
+    do: governance_call(:revoke_role_assignment, [role_id, assignment_id], {:error, :unavailable})
+
+  defp governance_current_constitution_snapshot do
+    governance_call(:current_constitution_snapshot, [], nil)
+  end
+
+  defp governance_law_proposals(law) when is_map(law) do
+    Map.get(law, :proposals, Map.get(law, "proposals", []))
+    |> List.wrap()
+  end
+
+  defp governance_law_snapshots(law) when is_map(law) do
+    Map.get(
+      law,
+      :snapshots,
+      Map.get(law, "snapshots", Map.get(law, :constitution_snapshots, []))
+    )
+    |> List.wrap()
+  end
+
+  defp governance_proposal_votes(proposal) when is_map(proposal) do
+    proposal
+    |> Map.get(:votes, Map.get(proposal, "votes", []))
+    |> List.wrap()
+    |> Enum.map(fn vote ->
+      voter = Map.get(vote, :voter, Map.get(vote, "voter", %{}))
+
+      Map.merge(
+        %{
+          voter_mxid: governance_member_mxid(voter)
+        },
+        governance_value_to_map(vote)
+      )
+    end)
+  end
+
+  defp governance_proposal_electorates(proposal) when is_map(proposal) do
+    proposal
+    |> Map.get(:electorates, Map.get(proposal, "electorates", Map.get(proposal, :electors, [])))
+    |> List.wrap()
+    |> Enum.map(fn elector ->
+      user = Map.get(elector, :user, Map.get(elector, "user", %{}))
+
+      %{
+        id: Map.get(user, :id, Map.get(user, "id")),
+        display_name: Map.get(user, :display_name, Map.get(user, "display_name")),
+        localpart: Map.get(user, :localpart, Map.get(user, "localpart")),
+        kind: Map.get(user, :kind, Map.get(user, "kind")),
+        mxid: governance_member_mxid(user),
+        eligibility_reason:
+          Map.get(elector, :eligible_via, Map.get(elector, "eligible_via", "Eligible"))
+      }
+    end)
+  end
+
+  defp governance_proposal_roles(proposal) when is_map(proposal) do
+    proposal
+    |> Map.get(
+      :eligible_roles,
+      Map.get(proposal, "eligible_roles", Map.get(proposal, :eligible_role_links, []))
+    )
+    |> List.wrap()
+    |> Enum.map(fn role_or_link ->
+      Map.get(role_or_link, :role, Map.get(role_or_link, "role", role_or_link))
+    end)
+  end
+
+  defp governance_vote_tally(%{} = proposal) do
+    case Map.get(proposal, :vote_tally, Map.get(proposal, "vote_tally")) do
+      %{} = tally ->
+        normalize_vote_tally(tally)
+
+      _ ->
+        votes = governance_proposal_votes(proposal)
+        tally_from_votes(votes)
+    end
+  end
+
+  defp normalize_vote_tally(tally) when is_map(tally) do
+    %{
+      approve: Map.get(tally, :approve, Map.get(tally, "approve", 0)),
+      reject: Map.get(tally, :reject, Map.get(tally, "reject", 0)),
+      abstain: Map.get(tally, :abstain, Map.get(tally, "abstain", 0))
+    }
+  end
+
+  defp tally_from_votes(votes) do
+    Enum.reduce(votes, %{approve: 0, reject: 0, abstain: 0}, fn vote, acc ->
+      case Map.get(vote, :choice, Map.get(vote, "choice")) do
+        :approve -> Map.update!(acc, :approve, &(&1 + 1))
+        "approve" -> Map.update!(acc, :approve, &(&1 + 1))
+        :reject -> Map.update!(acc, :reject, &(&1 + 1))
+        "reject" -> Map.update!(acc, :reject, &(&1 + 1))
+        :abstain -> Map.update!(acc, :abstain, &(&1 + 1))
+        "abstain" -> Map.update!(acc, :abstain, &(&1 + 1))
+        _ -> acc
+      end
+    end)
+  end
+
+  defp governance_law_active?(law) when is_map(law) do
+    Map.get(law, :status, Map.get(law, "status")) in [:active, "active"]
+  end
+
+  defp governance_proposal_open?(proposal) when is_map(proposal) do
+    Map.get(proposal, :status, Map.get(proposal, "status")) in [:open, "open"]
+  end
+
+  defp governance_role_enabled?(role) when is_map(role) do
+    Map.get(role, :enabled, Map.get(role, "enabled", true)) in [true, "true", :active, "active"]
+  end
+
+  defp governance_call(fun, args, fallback) do
+    module = SentientwaveAutomata.Governance
+
+    if Code.ensure_loaded?(module) and function_exported?(module, fun, length(args)) do
+      apply(module, fun, args)
+    else
+      fallback
+    end
+  end
+
+  defp governance_member_mxid(member) when is_map(member) do
+    localpart = Map.get(member, :localpart, Map.get(member, "localpart", ""))
+    domain = System.get_env("MATRIX_HOMESERVER_DOMAIN", "localhost")
+
+    case to_string(localpart) |> String.trim() do
+      "" -> "n/a"
+      normalized -> "@#{normalized}:#{domain}"
+    end
+  end
+
+  defp governance_value_to_map(%_{} = value), do: Map.from_struct(value)
+  defp governance_value_to_map(value) when is_map(value), do: value
+  defp governance_value_to_map(_value), do: %{}
+
+  defp governance_law_filters_from_params(params) do
+    raw = Map.get(params, "filters", %{})
+
+    form_filters = %{
+      "q" => fetch_governance_filter(raw, "q"),
+      "status" => fetch_governance_filter(raw, "status"),
+      "law_kind" => fetch_governance_filter(raw, "law_kind")
+    }
+
+    query_filters =
+      []
+      |> maybe_put_governance_filter(:q, form_filters["q"])
+      |> maybe_put_governance_filter(
+        :status,
+        normalize_governance_status_filter(form_filters["status"])
+      )
+      |> maybe_put_governance_filter(
+        :law_kind,
+        normalize_governance_kind_filter(form_filters["law_kind"])
+      )
+
+    {query_filters, Phoenix.Component.to_form(form_filters, as: :filters)}
+  end
+
+  defp governance_role_filters_from_params(params) do
+    raw = Map.get(params, "filters", %{})
+
+    form_filters = %{
+      "q" => fetch_governance_filter(raw, "q"),
+      "enabled" => fetch_governance_filter(raw, "enabled")
+    }
+
+    query_filters =
+      []
+      |> maybe_put_governance_filter(:q, form_filters["q"])
+      |> maybe_put_governance_filter(
+        :enabled,
+        normalize_governance_enabled_filter(form_filters["enabled"])
+      )
+
+    {query_filters, Phoenix.Component.to_form(form_filters, as: :filters)}
+  end
+
+  defp active_governance_law_filters(filters) do
+    labels = %{q: "Search", status: "Status", law_kind: "Law Kind"}
+
+    filters
+    |> Enum.reduce([], fn {key, value}, acc ->
+      if value in [nil, ""] do
+        acc
+      else
+        rendered =
+          case {key, value} do
+            {:status, :active} -> "Active"
+            {:status, :repealed} -> "Repealed"
+            {:law_kind, :general} -> "General"
+            {:law_kind, :voting_policy} -> "Voting Policy"
+            _ -> value
+          end
+
+        ["#{Map.get(labels, key, key)}: #{rendered}" | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp active_governance_role_filters(filters) do
+    labels = %{q: "Search", enabled: "Status"}
+
+    filters
+    |> Enum.reduce([], fn {key, value}, acc ->
+      if value in [nil, ""] do
+        acc
+      else
+        rendered =
+          case {key, value} do
+            {:enabled, true} -> "Enabled"
+            {:enabled, false} -> "Disabled"
+            _ -> value
+          end
+
+        ["#{Map.get(labels, key, key)}: #{rendered}" | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp fetch_governance_filter(filters, key) do
+    filters
+    |> Map.get(key, "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp maybe_put_governance_filter(filters, _key, ""), do: filters
+  defp maybe_put_governance_filter(filters, _key, nil), do: filters
+  defp maybe_put_governance_filter(filters, key, value), do: Keyword.put(filters, key, value)
+
+  defp normalize_governance_status_filter(""), do: nil
+
+  defp normalize_governance_status_filter(value) when value in ["active", "repealed"] do
+    String.to_atom(value)
+  end
+
+  defp normalize_governance_status_filter(_), do: nil
+
+  defp normalize_governance_kind_filter(""), do: nil
+
+  defp normalize_governance_kind_filter(value) when value in ["general", "voting_policy"] do
+    String.to_atom(value)
+  end
+
+  defp normalize_governance_kind_filter(_), do: nil
+
+  defp normalize_governance_enabled_filter(""), do: nil
+  defp normalize_governance_enabled_filter("true"), do: true
+  defp normalize_governance_enabled_filter("false"), do: false
+  defp normalize_governance_enabled_filter(_), do: nil
+
+  defp normalize_governance_proposal_type(value)
+       when is_atom(value) do
+    value
+    |> Atom.to_string()
+    |> normalize_governance_proposal_type()
+  end
+
+  defp normalize_governance_proposal_type(value)
+       when value in ["create", "amend", "repeal"] do
+    value
+  end
+
+  defp normalize_governance_proposal_type(_), do: "create"
+
+  defp sanitize_constitution_proposal_params(params) do
+    rule_config = %{
+      "approval_mode" =>
+        params |> Map.get("approval_mode", "majority") |> to_string() |> String.trim(),
+      "approval_threshold_percent" =>
+        params |> Map.get("approval_threshold_percent", "51") |> to_string() |> String.trim(),
+      "quorum_percent" =>
+        params |> Map.get("quorum_percent", "50") |> to_string() |> String.trim(),
+      "voting_window_hours" =>
+        params |> Map.get("voting_window_hours", "72") |> to_string() |> String.trim()
+    }
+
+    eligible_role_ids =
+      params
+      |> Map.get("eligible_role_ids", [])
+      |> List.wrap()
+      |> Enum.map(&to_string/1)
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    %{
+      "reference" => params |> Map.get("reference", "") |> to_string() |> String.trim(),
+      "proposal_type" =>
+        params
+        |> Map.get("proposal_type", "create")
+        |> to_string()
+        |> normalize_governance_proposal_type(),
+      "law_id" => trim_optional_governance_value(Map.get(params, "law_id", "")),
+      "proposed_name" => params |> Map.get("proposed_name", "") |> to_string() |> String.trim(),
+      "proposed_slug" => params |> Map.get("proposed_slug", "") |> to_string() |> String.trim(),
+      "proposed_markdown_body" =>
+        params |> Map.get("proposed_markdown_body", "") |> to_string() |> String.trim(),
+      "proposed_law_kind" =>
+        params |> Map.get("proposed_law_kind", "general") |> to_string() |> String.trim(),
+      "reason" => params |> Map.get("reason", "") |> to_string() |> String.trim(),
+      "voting_scope" =>
+        params |> Map.get("voting_scope", "all_members") |> to_string() |> String.trim(),
+      "room_id" => trim_optional_governance_value(Map.get(params, "room_id", "")),
+      "eligible_role_ids" => eligible_role_ids,
+      "voting_rule_snapshot" => rule_config,
+      "rule_config" => rule_config
+    }
+  end
+
+  defp sanitize_constitution_role_params(params) do
+    %{
+      "name" => params |> Map.get("name", "") |> to_string() |> String.trim(),
+      "slug" => params |> Map.get("slug", "") |> to_string() |> String.trim(),
+      "description" => params |> Map.get("description", "") |> to_string() |> String.trim(),
+      "enabled" => truthy?(Map.get(params, "enabled", "false"))
+    }
+  end
+
+  defp sanitize_constitution_role_assignment_params(params) do
+    %{
+      "user_id" => params |> Map.get("user_id", "") |> to_string() |> String.trim()
+    }
+  end
+
+  defp trim_optional_governance_value(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> case do
+      "" -> nil
+      trimmed -> trimmed
+    end
   end
 
   defp parse_metadata_json(value) when is_binary(value) do

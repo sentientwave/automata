@@ -7,6 +7,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Local do
   require Logger
 
   alias SentientwaveAutomata.Agents.MentionDispatcher
+  alias SentientwaveAutomata.Governance.Dispatcher, as: GovernanceDispatcher
 
   @impl true
   def post_message(room_id, message, metadata) do
@@ -25,7 +26,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Local do
 
   @impl true
   def ingest_event(%{"type" => "m.room.message", "content" => %{"body" => body}} = event) do
-    MentionDispatcher.dispatch(%{
+    message = %{
       room_id: Map.get(event, "room_id", ""),
       sender_mxid: Map.get(event, "sender", ""),
       message_id:
@@ -33,9 +34,16 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Local do
       body: body,
       raw_event: event,
       metadata: %{"source" => "matrix_local", "conversation_scope" => "room"}
-    })
+    }
 
-    :ok
+    case GovernanceDispatcher.dispatch(message) do
+      :pass_through ->
+        _ = MentionDispatcher.dispatch(message)
+        :ok
+
+      {:governance, _result} ->
+        :ok
+    end
   end
 
   def ingest_event(_event), do: :ok

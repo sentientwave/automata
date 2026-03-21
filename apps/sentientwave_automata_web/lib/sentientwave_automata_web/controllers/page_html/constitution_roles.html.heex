@@ -1,0 +1,203 @@
+<.admin_shell
+  flash={@flash}
+  title="Governance Roles"
+  subtitle="Create the electorate structure used by role-scoped proposals and review which members belong to each role."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Role Overview</h2>
+        <p class="sw-card-copy">
+          Governance roles are independent from Matrix admin status and determine who can participate in scoped votes.
+        </p>
+      </div>
+      <a href={~p"/constitution"} class="sw-btn sw-btn-ghost">Back to constitution</a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Visible: {@filtered_role_count}</span>
+      <span class="sw-pill">Total: {@total_role_count}</span>
+      <span class="sw-pill">Enabled: {@active_role_count}</span>
+    </div>
+
+    <form action={~p"/constitution/roles"} method="get" class="sw-form-grid mt-5">
+      <label class="sw-field sw-field-span">
+        <span>Search</span>
+        <input
+          name="filters[q]"
+          class="sw-input"
+          value={@filter_form[:q].value}
+          placeholder="Search by role name, slug, or description"
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>Status</span>
+        <select name="filters[enabled]" class="sw-select">
+          <%= for {label, value} <- @role_enabled_options do %>
+            <option value={value} selected={@filter_form[:enabled].value == value}>
+              {label}
+            </option>
+          <% end %>
+        </select>
+      </label>
+
+      <div class="sw-actions sw-field-span">
+        <button type="submit" class="sw-btn sw-btn-primary">Apply Filters</button>
+        <a href={~p"/constitution/roles"} class="sw-btn sw-btn-ghost">Reset</a>
+      </div>
+    </form>
+
+    <div :if={@active_filters != []} class="sw-pill-list mt-4">
+      <span :for={label <- @active_filters} class="sw-pill">{label}</span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Create Role</h2>
+          <p class="sw-card-copy">
+            Use roles to scope proposal voting without reusing the Matrix admin flag.
+          </p>
+        </div>
+      </div>
+
+      <form action={~p"/constitution/roles"} method="post" class="sw-form-grid mt-5">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+        <label class="sw-field">
+          <span>Name</span>
+          <input name="role[name]" class="sw-input" placeholder="Policy Council" />
+        </label>
+
+        <label class="sw-field">
+          <span>Slug</span>
+          <input name="role[slug]" class="sw-input" placeholder="policy-council" />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Description</span>
+          <input
+            name="role[description]"
+            class="sw-input"
+            placeholder="Members who can vote on policy changes"
+          />
+        </label>
+
+        <label class="sw-checkbox-row">
+          <input type="checkbox" name="role[enabled]" value="1" checked />
+          <span>Enabled</span>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Create Role</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Role Guidance</h2>
+          <p class="sw-card-copy">
+            Keep humans as the default electorate and explicitly add agents or services only when they should vote.
+          </p>
+        </div>
+      </div>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Default membership</p>
+          <p class="sw-detail-value">Human directory users</p>
+        </div>
+        <div>
+          <p class="sw-section-label">Agent membership</p>
+          <p class="sw-detail-value">Only when explicitly assigned to a governance role</p>
+        </div>
+        <div>
+          <p class="sw-section-label">Service membership</p>
+          <p class="sw-detail-value">
+            Only for integration identities that need scoped voting rights
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Configured Roles</h2>
+        <p class="sw-card-copy">
+          Open a role to edit its metadata or manage membership assignments.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@roles == []} class="sw-empty mt-5">
+      <h3>No roles yet</h3>
+      <p>Create the first governance role to start limiting who can participate in voting.</p>
+    </div>
+
+    <div :if={@roles != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Description</th>
+            <th>Status</th>
+            <th>Assignments</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={role <- @roles}>
+            <td>
+              <div class="sw-table-primary">
+                {Map.get(role, :name, Map.get(role, "name", "Unnamed role"))}
+              </div>
+              <div class="sw-table-secondary">
+                {Map.get(role, :slug, Map.get(role, "slug", ""))}
+              </div>
+            </td>
+            <td>
+              {Map.get(
+                role,
+                :description,
+                Map.get(role, "description", "No description recorded.")
+              )}
+            </td>
+            <td>
+              <span class={[
+                "sw-pill",
+                governance_role_status_class(
+                  Map.get(role, :enabled, Map.get(role, "enabled", true))
+                )
+              ]}>
+                {governance_role_status_label(
+                  Map.get(role, :enabled, Map.get(role, "enabled", true))
+                )}
+              </span>
+            </td>
+            <td>{Map.get(role, :assignment_count, Map.get(role, "assignment_count", 0))}</td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/constitution/roles/#{role.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Open
+                </a>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</.admin_shell>

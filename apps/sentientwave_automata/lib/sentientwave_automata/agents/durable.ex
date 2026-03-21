@@ -4,12 +4,19 @@ defmodule SentientwaveAutomata.Agents.Durable do
   """
 
   alias SentientwaveAutomata.Agents
+  alias SentientwaveAutomata.Agents.Runtime
   alias SentientwaveAutomata.Agents.Run
   alias SentientwaveAutomata.Agents.Workflow
   require Logger
 
   @spec start_run(map()) :: {:ok, Run.t()} | {:error, term()}
   def start_run(%{agent_id: agent_id} = attrs) do
+    constitution_metadata =
+      Runtime.constitution_snapshot_metadata(Runtime.current_constitution_snapshot())
+
+    run_metadata = Map.merge(Map.get(attrs, :metadata, %{}), constitution_metadata)
+    attrs = Map.merge(attrs, constitution_metadata)
+
     with {:ok, temporal} <- temporal_adapter().start_agent_run(attrs),
          {:ok, run} <-
            Agents.create_run(%{
@@ -18,7 +25,7 @@ defmodule SentientwaveAutomata.Agents.Durable do
              workflow_id: temporal.workflow_id,
              temporal_run_id: temporal.run_id,
              status: :running,
-             metadata: Map.get(attrs, :metadata, %{})
+             metadata: run_metadata
            }) do
       finalize_run_async(run, attrs)
       {:ok, run}

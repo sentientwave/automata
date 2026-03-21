@@ -30,6 +30,7 @@ defmodule SentientwaveAutomata.Application do
       [
         SentientwaveAutomata.Matrix.ReconciliationWorker,
         SentientwaveAutomata.Matrix.MentionPoller,
+        SentientwaveAutomata.Governance.ProposalResolutionWorker,
         SentientwaveAutomata.Agents.ScheduledTaskWorker,
         SentientwaveAutomata.Settings.BootstrapWorker
       ]

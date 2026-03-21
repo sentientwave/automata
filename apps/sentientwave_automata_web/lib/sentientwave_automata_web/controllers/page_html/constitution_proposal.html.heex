@@ -1,0 +1,266 @@
+<.admin_shell
+  flash={@flash}
+  title={"Proposal: #{Map.get(@proposal, :reference, "unreferenced")}"}
+  subtitle="Review the proposal text, electorate, vote tally, and Matrix provenance before it becomes part of the constitution."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Proposal Summary</h2>
+        <p class="sw-card-copy">
+          Proposal state is driven by Matrix voting, but the admin view keeps the entire record visible and searchable.
+        </p>
+      </div>
+      <a href={~p"/constitution"} class="sw-btn sw-btn-ghost">Back to constitution</a>
+    </div>
+
+    <div class="sw-kpi-grid mt-5">
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Type</p>
+        <p class="sw-kpi-value sw-kpi-value-small">
+          {governance_proposal_type_label(Map.get(@proposal, :proposal_type))}
+        </p>
+        <p class="sw-kpi-copy">{Map.get(@proposal, :reference, "Unreferenced")}</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Status</p>
+        <p class="sw-kpi-value sw-kpi-value-small">
+          {governance_proposal_status_label(Map.get(@proposal, :status))}
+        </p>
+        <p class="sw-kpi-copy">
+          {governance_rule_label(Map.get(@proposal, :voting_rule_snapshot, %{}))}
+        </p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Scope</p>
+        <p class="sw-kpi-value sw-kpi-value-small">
+          {Map.get(@proposal, :voting_scope, "all_members")}
+        </p>
+        <p class="sw-kpi-copy">{Map.get(@proposal, :room_id, "No Matrix room recorded")}</p>
+      </article>
+      <article class="sw-kpi-card">
+        <p class="sw-kpi-label">Votes</p>
+        <p class="sw-kpi-value sw-kpi-value-small">{governance_vote_tally_label(@vote_tally)}</p>
+        <p class="sw-kpi-copy">
+          Opened {format_timestamp(
+            Map.get(@proposal, :opened_at, Map.get(@proposal, "opened_at"))
+          )}
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Proposal Details</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Reference</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :reference, "unreferenced")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Name</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :name, "Unnamed proposal")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Target Law</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :law_id, "Create new law")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Voting Rule Snapshot</p>
+          <p class="sw-detail-value">
+            {governance_rule_label(Map.get(@proposal, :voting_rule_snapshot, %{}))}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Reason</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :reason, "No reason recorded")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Proposed Markdown</p>
+          <pre class="sw-code-block"><code phx-no-curly-interpolation><%= Map.get(@proposal, :proposed_markdown_body, "No markdown recorded.") %></code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Matrix Provenance</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Room</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :room_id, "Not recorded")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Proposal Message ID</p>
+          <p class="sw-detail-value">
+            {Map.get(@proposal, :proposal_message_id, "Not recorded")}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Result Message ID</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :result_message_id, "Not recorded")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Workflow ID</p>
+          <p class="sw-detail-value">{Map.get(@proposal, :workflow_id, "Not recorded")}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Stored Metadata</p>
+          <pre class="sw-code-block"><code phx-no-curly-interpolation><%= pretty_json(Map.get(@proposal, :metadata, %{})) %></code></pre>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Electorate Snapshot</h2>
+          <p class="sw-card-copy">
+            The voters on a proposal are frozen when it opens so eligibility stays auditable.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@electorates == []} class="sw-empty mt-5">
+        <h3>No electorate snapshot</h3>
+        <p>Once the governance backend is wired, eligible voters will appear here.</p>
+      </div>
+
+      <div :if={@electorates != []} class="sw-table-wrap mt-5">
+        <table class="sw-data-table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Kind</th>
+              <th>Eligibility</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={member <- @electorates}>
+              <td>
+                <div class="sw-table-primary">{governance_member_label(member)}</div>
+                <div class="sw-table-secondary">
+                  {Map.get(member, :mxid, Map.get(member, "mxid", "n/a"))}
+                </div>
+              </td>
+              <td>
+                <span class="sw-pill">
+                  {directory_kind_label(Map.get(member, :kind, Map.get(member, "kind")))}
+                </span>
+              </td>
+              <td>
+                {Map.get(
+                  member,
+                  :eligibility_reason,
+                  Map.get(member, "eligibility_reason", "Eligible")
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Eligible Roles</h2>
+          <p class="sw-card-copy">
+            Role-scoped proposals are limited to users who held the selected roles when the proposal opened.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@role_choices == []} class="sw-empty mt-5">
+        <h3>No role limits recorded</h3>
+        <p>This proposal currently applies to all eligible members.</p>
+      </div>
+
+      <div :if={@role_choices != []} class="sw-pill-list mt-5">
+        <span :for={role <- @role_choices} class="sw-pill">
+          {Map.get(role, :name, Map.get(role, "name", "Unnamed role"))}
+        </span>
+      </div>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Approved / Rejected / Abstained</p>
+          <p class="sw-detail-value">{governance_vote_tally_label(@vote_tally)}</p>
+        </div>
+        <div>
+          <p class="sw-section-label">Resolved At</p>
+          <p class="sw-detail-value">
+            {format_timestamp(Map.get(@proposal, :resolved_at, Map.get(@proposal, "resolved_at")))}
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Vote History</h2>
+        <p class="sw-card-copy">
+          Every vote is stored with Matrix provenance so future audits can replay the decision trail.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@votes == []} class="sw-empty mt-5">
+      <h3>No votes recorded</h3>
+      <p>The governance room has not recorded any votes for this proposal yet.</p>
+    </div>
+
+    <div :if={@votes != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Voter</th>
+            <th>Choice</th>
+            <th>Cast</th>
+            <th>Room</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={vote <- @votes}>
+            <td>
+              <div class="sw-table-primary">
+                {governance_member_label(Map.get(vote, :voter, %{}))}
+              </div>
+              <div class="sw-table-secondary">
+                {Map.get(vote, :voter_mxid, Map.get(vote, "voter_mxid", "n/a"))}
+              </div>
+            </td>
+            <td>
+              <span class={[
+                "sw-pill",
+                governance_vote_choice_class(Map.get(vote, :choice, Map.get(vote, "choice")))
+              ]}>
+                {governance_vote_choice_label(Map.get(vote, :choice, Map.get(vote, "choice")))}
+              </span>
+            </td>
+            <td>{format_timestamp(Map.get(vote, :cast_at, Map.get(vote, "cast_at")))}</td>
+            <td>{Map.get(vote, :room_id, Map.get(vote, "room_id", "n/a"))}</td>
+            <td>{Map.get(vote, :message_id, Map.get(vote, "message_id", "n/a"))}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</.admin_shell>

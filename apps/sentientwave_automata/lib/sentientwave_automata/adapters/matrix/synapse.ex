@@ -8,6 +8,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Synapse do
   @behaviour SentientwaveAutomata.Adapters.Matrix.Behaviour
 
   alias SentientwaveAutomata.Agents.MentionDispatcher
+  alias SentientwaveAutomata.Governance.Dispatcher, as: GovernanceDispatcher
 
   @token_key {:sentientwave_automata, :matrix_agent_token}
 
@@ -109,7 +110,7 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Synapse do
   @impl true
   def ingest_event(%{"type" => "m.room.message", "content" => %{"body" => body}} = event)
       when is_binary(body) do
-    MentionDispatcher.dispatch(%{
+    message = %{
       room_id: Map.get(event, "room_id", ""),
       sender_mxid: Map.get(event, "sender", ""),
       message_id:
@@ -117,9 +118,16 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Synapse do
       body: body,
       raw_event: event,
       metadata: %{"source" => "matrix_sync", "conversation_scope" => "room"}
-    })
+    }
 
-    :ok
+    case GovernanceDispatcher.dispatch(message) do
+      :pass_through ->
+        _ = MentionDispatcher.dispatch(message)
+        :ok
+
+      {:governance, _result} ->
+        :ok
+    end
   end
 
   def ingest_event(_event), do: :ok

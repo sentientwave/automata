@@ -1,0 +1,238 @@
+<.admin_shell
+  flash={@flash}
+  title={"#{@proposal_type_label} Proposal"}
+  subtitle="Draft a new governance change on a dedicated page, then publish it through the Matrix governance room."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card sw-constitution-hero">
+    <div class="sw-inline-actions">
+      <a href={~p"/constitution"} class="sw-btn sw-btn-ghost">Back to constitution</a>
+      <a href={~p"/constitution/roles"} class="sw-btn sw-btn-ghost">Review roles</a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Type: {@proposal_type_label}</span>
+      <span class="sw-pill">Matrix voting required</span>
+      <span class="sw-pill">Read-only laws stay published until a proposal resolves</span>
+    </div>
+
+    <div :if={not @governance_available?} class="sw-alert sw-alert-warning mt-5">
+      Governance backend is not available yet, so this page is prepared for the future proposal flow and form wiring.
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Proposal Draft</h2>
+      <p class="sw-card-copy mt-4">
+        Fill in the law text and voting policy details here. The actual vote still happens in Matrix.
+      </p>
+
+      <form action={~p"/constitution/proposals"} method="post" class="sw-form-grid mt-5">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="proposal[proposal_type]" value={@proposal_type} />
+
+        <label class="sw-field">
+          <span>Reference</span>
+          <input
+            name="proposal[reference]"
+            class="sw-input"
+            placeholder="LAW-2026-001"
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>Target Law</span>
+          <select name="proposal[law_id]" class="sw-select">
+            <option value="">Create a new law</option>
+            <%= for law <- @laws do %>
+              <option value={law.id} selected={@linked_law && @linked_law.id == law.id}>
+                {law.name} ({law.slug})
+              </option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field">
+          <span>Law Kind</span>
+          <select name="proposal[proposed_law_kind]" class="sw-select">
+            <%= for {label, value} <- @law_kind_options do %>
+              <option value={value} selected={value == "general"}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field">
+          <span>Voting Scope</span>
+          <select name="proposal[voting_scope]" class="sw-select">
+            <%= for {label, value} <- @voting_scope_options do %>
+              <option value={value} selected={value == "all_members"}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field">
+          <span>Approval Mode</span>
+          <select name="proposal[approval_mode]" class="sw-select">
+            <%= for {label, value} <- @approval_mode_options do %>
+              <option value={value} selected={value == "majority"}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field">
+          <span>Quorum Percent</span>
+          <input
+            name="proposal[quorum_percent]"
+            type="number"
+            min="1"
+            max="100"
+            class="sw-input"
+            value="50"
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>Approval Threshold Percent</span>
+          <input
+            name="proposal[approval_threshold_percent]"
+            type="number"
+            min="1"
+            max="100"
+            class="sw-input"
+            value="51"
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>Voting Window Hours</span>
+          <input
+            name="proposal[voting_window_hours]"
+            type="number"
+            min="1"
+            class="sw-input"
+            value="72"
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Proposed Name</span>
+          <input
+            name="proposal[proposed_name]"
+            class="sw-input"
+            placeholder="Constitution Safety Law"
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Proposed Slug</span>
+          <input
+            name="proposal[proposed_slug]"
+            class="sw-input"
+            placeholder="constitution-safety-law"
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Reason</span>
+          <textarea
+            name="proposal[reason]"
+            class="sw-textarea"
+            rows="4"
+            placeholder="Explain why this change should be considered."
+          ></textarea>
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Proposed Markdown</span>
+          <textarea
+            name="proposal[proposed_markdown_body]"
+            class="sw-textarea"
+            rows="14"
+            placeholder="# Law: Constitution Safety Law\n\nExplain the rule in plain language."
+          ></textarea>
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Eligible Roles</span>
+          <select
+            name="proposal[eligible_role_ids][]"
+            class="sw-select"
+            multiple
+            size={max(length(@roles), 3)}
+          >
+            <%= for role <- @roles do %>
+              <option value={role.id}>
+                {Map.get(role, :name, Map.get(role, "name", "Unnamed role"))}
+              </option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Governance Room ID</span>
+          <input
+            name="proposal[room_id]"
+            class="sw-input"
+            placeholder="!governance:localhost"
+          />
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Open Proposal</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Context Preview</h2>
+      <p class="sw-card-copy mt-4">
+        Use the preview to confirm which law will be targeted and which voting policy will apply.
+      </p>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Proposal Type</p>
+          <p class="sw-detail-value">{@proposal_type_label}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Current Law</p>
+          <p class="sw-detail-value">
+            {if @linked_law,
+              do: "#{@linked_law.name} (#{@linked_law.slug})",
+              else: "No law selected"}
+          </p>
+        </div>
+
+        <div :if={@linked_law}>
+          <p class="sw-section-label">Current Law Summary</p>
+          <p class="sw-detail-value">{governance_law_summary(@linked_law)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Voting Rule Defaults</p>
+          <p class="sw-detail-value">
+            Majority of cast votes, 50 percent quorum, 72 hour window.
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Roles Available</p>
+          <p class="sw-detail-value">
+            {length(@roles)} role(s) can be selected for scoped proposals.
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Notes</p>
+          <p class="sw-detail-value">
+            Laws stay read-only after publication. A proposal is the only way to publish a new snapshot.
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+</.admin_shell>

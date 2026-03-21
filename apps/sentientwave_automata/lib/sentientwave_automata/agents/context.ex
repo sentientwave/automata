@@ -57,6 +57,55 @@ defmodule SentientwaveAutomata.Agents.Runtime do
     AgentProfile.changeset(agent, normalize_agent_attrs(attrs))
   end
 
+  @spec current_constitution_snapshot() :: map() | nil
+  def current_constitution_snapshot do
+    current_constitution_snapshot(constitution_source_module())
+  end
+
+  @spec constitution_snapshot_reference(map() | nil) :: map() | nil
+  def constitution_snapshot_reference(snapshot_or_metadata \\ nil) do
+    snapshot =
+      normalize_constitution_snapshot(snapshot_or_metadata) || current_constitution_snapshot()
+
+    case snapshot do
+      %{id: id, version: version} when not is_nil(id) or not is_nil(version) ->
+        %{id: id, version: version}
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec constitution_snapshot_metadata(map() | nil) :: map()
+  def constitution_snapshot_metadata(snapshot_or_metadata \\ nil) do
+    case constitution_snapshot_reference(snapshot_or_metadata) do
+      %{id: id, version: version} ->
+        %{
+          "constitution_snapshot_id" => id,
+          "constitution_version" => version
+        }
+
+      _ ->
+        %{}
+    end
+  end
+
+  @spec constitution_prompt_text(map() | nil) :: String.t()
+  def constitution_prompt_text(snapshot_or_reference \\ nil) do
+    snapshot =
+      snapshot_or_reference
+      |> resolve_constitution_snapshot()
+      |> case do
+        nil -> current_constitution_snapshot()
+        value -> value
+      end
+
+    snapshot
+    |> snapshot_prompt_text()
+    |> to_string()
+    |> String.trim()
+  end
+
   def create_skill(attrs) when is_map(attrs) do
     Agents.create_skill(attrs)
   end
@@ -172,6 +221,214 @@ defmodule SentientwaveAutomata.Agents.Runtime do
     |> Enum.take(limit)
     |> Enum.map(&Map.delete(&1, :embedding))
   end
+
+  defp current_constitution_snapshot(source_module) do
+    cond do
+      function_exported?(source_module, :current_constitution_snapshot, 0) ->
+        source_module.current_constitution_snapshot() |> normalize_constitution_snapshot()
+
+      function_exported?(source_module, :list_active_laws_for_prompt, 0) ->
+        source_module.list_active_laws_for_prompt()
+        |> build_snapshot_from_laws()
+
+      true ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp resolve_constitution_snapshot(nil), do: nil
+
+  defp resolve_constitution_snapshot(snapshot_or_reference) do
+    normalized = normalize_constitution_snapshot(snapshot_or_reference)
+
+    cond do
+      normalized && normalized.prompt_text ->
+        normalized
+
+      normalized && normalized.id && normalized.version ->
+        source_module = constitution_source_module()
+        normalized_id = normalized.id
+        normalized_version = normalized.version
+
+        cond do
+          function_exported?(source_module, :get_constitution_snapshot, 1) ->
+            source_module.get_constitution_snapshot(normalized.id)
+            |> normalize_constitution_snapshot()
+
+          function_exported?(source_module, :get_constitution_snapshot_by_id, 1) ->
+            source_module.get_constitution_snapshot_by_id(normalized.id)
+            |> normalize_constitution_snapshot()
+
+          function_exported?(source_module, :current_constitution_snapshot, 0) ->
+            source_module.current_constitution_snapshot()
+            |> normalize_constitution_snapshot()
+            |> case do
+              %{id: ^normalized_id, version: ^normalized_version} = snapshot ->
+                snapshot
+
+              _ ->
+                nil
+            end
+
+          true ->
+            nil
+        end
+
+      normalized && normalized.id ->
+        source_module = constitution_source_module()
+        normalized_id = normalized.id
+
+        cond do
+          function_exported?(source_module, :get_constitution_snapshot, 1) ->
+            source_module.get_constitution_snapshot(normalized.id)
+            |> normalize_constitution_snapshot()
+
+          function_exported?(source_module, :get_constitution_snapshot_by_id, 1) ->
+            source_module.get_constitution_snapshot_by_id(normalized.id)
+            |> normalize_constitution_snapshot()
+
+          function_exported?(source_module, :current_constitution_snapshot, 0) ->
+            source_module.current_constitution_snapshot()
+            |> normalize_constitution_snapshot()
+            |> case do
+              %{id: ^normalized_id} = snapshot ->
+                snapshot
+
+              _ ->
+                nil
+            end
+
+          true ->
+            nil
+        end
+
+      true ->
+        current_constitution_snapshot()
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp build_snapshot_from_laws(laws) when is_list(laws) do
+    prompt_text =
+      laws
+      |> Enum.map_join("\n\n", fn law ->
+        law
+        |> normalize_constitution_snapshot()
+        |> snapshot_prompt_text()
+        |> to_string()
+        |> String.trim()
+      end)
+      |> String.trim()
+
+    %{
+      id: "current",
+      version: 1,
+      prompt_text: prompt_text,
+      laws: laws
+    }
+  end
+
+  defp build_snapshot_from_laws(_), do: nil
+
+  defp normalize_constitution_snapshot(nil), do: nil
+
+  defp normalize_constitution_snapshot(%_{} = struct) do
+    struct
+    |> Map.from_struct()
+    |> normalize_constitution_snapshot()
+  end
+
+  defp normalize_constitution_snapshot(snapshot) when is_map(snapshot) do
+    id =
+      map_fetch(snapshot, [:id, :snapshot_id, :constitution_snapshot_id, "id", "snapshot_id"])
+
+    version =
+      map_fetch(snapshot, [
+        :version,
+        :constitution_version,
+        "version",
+        "constitution_version"
+      ])
+
+    prompt_text =
+      map_fetch(snapshot, [
+        :prompt_text,
+        :rendered_prompt_text,
+        :constitution_prompt_text,
+        "prompt_text",
+        "rendered_prompt_text",
+        "constitution_prompt_text"
+      ])
+
+    law_memberships = map_fetch(snapshot, [:law_memberships, "law_memberships"])
+    laws = map_fetch(snapshot, [:laws, "laws"])
+
+    %{
+      id: id,
+      version: version,
+      prompt_text: prompt_text || render_laws_prompt_text(law_memberships || laws),
+      law_memberships: law_memberships,
+      laws: laws
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp normalize_constitution_snapshot(_), do: nil
+
+  defp render_laws_prompt_text(laws) when is_list(laws) do
+    laws
+    |> Enum.map_join("\n\n", fn law ->
+      law = map_fetch(law, [:law, "law"]) || law
+
+      law
+      |> normalize_constitution_snapshot()
+      |> snapshot_prompt_text()
+      |> to_string()
+      |> String.trim()
+    end)
+    |> String.trim()
+  end
+
+  defp render_laws_prompt_text(_), do: nil
+
+  defp snapshot_prompt_text(nil), do: nil
+
+  defp snapshot_prompt_text(snapshot) when is_map(snapshot) do
+    cond do
+      has_text?(map_fetch(snapshot, [:prompt_text, "prompt_text"])) ->
+        map_fetch(snapshot, [:prompt_text, "prompt_text"])
+
+      has_text?(map_fetch(snapshot, [:markdown_body, "markdown_body"])) ->
+        map_fetch(snapshot, [:markdown_body, "markdown_body"])
+
+      has_text?(map_fetch(snapshot, [:body, "body"])) ->
+        map_fetch(snapshot, [:body, "body"])
+
+      true ->
+        nil
+    end
+  end
+
+  defp snapshot_prompt_text(_), do: nil
+
+  defp constitution_source_module do
+    Application.get_env(
+      :sentientwave_automata,
+      :constitution_source_module,
+      SentientwaveAutomata.Governance
+    )
+  end
+
+  defp map_fetch(map, keys) do
+    Enum.find_value(keys, fn key -> Map.get(map, key) end)
+  end
+
+  defp has_text?(value) when is_binary(value), do: String.trim(value) != ""
+  defp has_text?(_), do: false
 
   defp maybe_active_only(query, opts) do
     if Keyword.get(opts, :active_only, false) do

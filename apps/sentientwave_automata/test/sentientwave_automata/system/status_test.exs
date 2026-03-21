@@ -14,6 +14,7 @@ defmodule SentientwaveAutomata.System.StatusTest do
     Matrix Admin User: @admin:localhost
     Matrix Admin Password: secret
     Room Alias: #acme-platform-automata:localhost
+    Governance Room Alias: #acme-governance:localhost
     Invite Password: invite-secret
     Automata URL: http://localhost:4000
     """)
@@ -24,6 +25,7 @@ defmodule SentientwaveAutomata.System.StatusTest do
     assert summary.group_name == "Platform"
     assert summary.matrix_admin_user == "@admin:localhost"
     assert summary.room_alias == "#acme-platform-automata:localhost"
+    assert summary.governance_room_alias == "#acme-governance:localhost"
     assert summary.source == "connection-info"
 
     File.rm(path)
@@ -39,5 +41,6 @@ defmodule SentientwaveAutomata.System.StatusTest do
     assert summary.group_name == "Core Team"
     assert summary.source == "env"
     assert summary.matrix_url == "http://localhost:8008"
+    assert summary.governance_room_alias == "governance"
   end
 end

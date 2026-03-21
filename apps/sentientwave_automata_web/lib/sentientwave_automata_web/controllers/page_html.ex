@@ -216,6 +216,188 @@ defmodule SentientwaveAutomataWeb.PageHTML do
   def tool_state_label(%{effective_allowed: false}), do: "Blocked"
   def tool_state_label(_), do: "Unknown"
 
+  def governance_law_kind_label(:general), do: "General"
+  def governance_law_kind_label("general"), do: "General"
+  def governance_law_kind_label(:voting_policy), do: "Voting Policy"
+  def governance_law_kind_label("voting_policy"), do: "Voting Policy"
+  def governance_law_kind_label(_), do: "Unknown"
+
+  def governance_law_status_label(:active), do: "Active"
+  def governance_law_status_label("active"), do: "Active"
+  def governance_law_status_label(:repealed), do: "Repealed"
+  def governance_law_status_label("repealed"), do: "Repealed"
+  def governance_law_status_label(_), do: "Unknown"
+
+  def governance_proposal_type_label(:create), do: "Create"
+  def governance_proposal_type_label("create"), do: "Create"
+  def governance_proposal_type_label(:amend), do: "Amend"
+  def governance_proposal_type_label("amend"), do: "Amend"
+  def governance_proposal_type_label(:repeal), do: "Repeal"
+  def governance_proposal_type_label("repeal"), do: "Repeal"
+  def governance_proposal_type_label(_), do: "Proposal"
+
+  def governance_proposal_status_label(:open), do: "Open"
+  def governance_proposal_status_label("open"), do: "Open"
+  def governance_proposal_status_label(:approved), do: "Approved"
+  def governance_proposal_status_label("approved"), do: "Approved"
+  def governance_proposal_status_label(:rejected), do: "Rejected"
+  def governance_proposal_status_label("rejected"), do: "Rejected"
+  def governance_proposal_status_label(:cancelled), do: "Cancelled"
+  def governance_proposal_status_label("cancelled"), do: "Cancelled"
+  def governance_proposal_status_label(_), do: "Unknown"
+
+  def governance_vote_choice_label(:approve), do: "Approve"
+  def governance_vote_choice_label("approve"), do: "Approve"
+  def governance_vote_choice_label(:reject), do: "Reject"
+  def governance_vote_choice_label("reject"), do: "Reject"
+  def governance_vote_choice_label(:abstain), do: "Abstain"
+  def governance_vote_choice_label("abstain"), do: "Abstain"
+  def governance_vote_choice_label(_), do: "Unknown"
+
+  def governance_role_status_label(true), do: "Enabled"
+  def governance_role_status_label("true"), do: "Enabled"
+  def governance_role_status_label(:active), do: "Enabled"
+  def governance_role_status_label("active"), do: "Enabled"
+  def governance_role_status_label(false), do: "Disabled"
+  def governance_role_status_label("false"), do: "Disabled"
+  def governance_role_status_label(:revoked), do: "Disabled"
+  def governance_role_status_label("revoked"), do: "Disabled"
+  def governance_role_status_label(_), do: "Unknown"
+
+  def governance_law_status_class(:active), do: "is-ok"
+  def governance_law_status_class("active"), do: "is-ok"
+  def governance_law_status_class(:repealed), do: "is-neutral"
+  def governance_law_status_class("repealed"), do: "is-neutral"
+  def governance_law_status_class(_), do: "is-neutral"
+
+  def governance_proposal_status_class(:open), do: "is-warning"
+  def governance_proposal_status_class("open"), do: "is-warning"
+  def governance_proposal_status_class(:approved), do: "is-ok"
+  def governance_proposal_status_class("approved"), do: "is-ok"
+  def governance_proposal_status_class(:rejected), do: "is-issue"
+  def governance_proposal_status_class("rejected"), do: "is-issue"
+  def governance_proposal_status_class(:cancelled), do: "is-neutral"
+  def governance_proposal_status_class("cancelled"), do: "is-neutral"
+  def governance_proposal_status_class(_), do: "is-neutral"
+
+  def governance_role_status_class(true), do: "is-ok"
+  def governance_role_status_class("true"), do: "is-ok"
+  def governance_role_status_class(:active), do: "is-ok"
+  def governance_role_status_class("active"), do: "is-ok"
+  def governance_role_status_class(false), do: "is-neutral"
+  def governance_role_status_class("false"), do: "is-neutral"
+  def governance_role_status_class(:revoked), do: "is-neutral"
+  def governance_role_status_class("revoked"), do: "is-neutral"
+  def governance_role_status_class(_), do: "is-neutral"
+
+  def governance_vote_choice_class(:approve), do: "is-ok"
+  def governance_vote_choice_class("approve"), do: "is-ok"
+  def governance_vote_choice_class(:reject), do: "is-issue"
+  def governance_vote_choice_class("reject"), do: "is-issue"
+  def governance_vote_choice_class(:abstain), do: "is-neutral"
+  def governance_vote_choice_class("abstain"), do: "is-neutral"
+  def governance_vote_choice_class(_), do: "is-neutral"
+
+  def governance_law_summary(law) do
+    body = Map.get(law, :markdown_body, Map.get(law, "markdown_body", ""))
+
+    body =
+      cond do
+        is_binary(body) -> body
+        is_nil(body) -> ""
+        true -> to_string(body)
+      end
+
+    body
+    |> String.split("\n", trim: true)
+    |> Enum.find_value("No law body recorded yet.", fn line ->
+      trimmed = String.trim(line)
+
+      if trimmed == "" do
+        nil
+      else
+        truncate_text(trimmed, 140)
+      end
+    end)
+  end
+
+  def governance_snapshot_label(nil), do: "No snapshot published yet"
+
+  def governance_snapshot_label(snapshot) when is_map(snapshot) do
+    version = Map.get(snapshot, :version, Map.get(snapshot, "version", "unknown"))
+    published_at = Map.get(snapshot, :published_at, Map.get(snapshot, "published_at"))
+
+    case published_at do
+      %DateTime{} = timestamp ->
+        "Version #{version} published #{format_timestamp(timestamp)}"
+
+      _ ->
+        "Version #{version}"
+    end
+  end
+
+  def governance_snapshot_label(_), do: "Unknown snapshot"
+
+  def governance_member_label(member) when is_map(member) do
+    display_name =
+      Map.get(member, :display_name, Map.get(member, "display_name", ""))
+
+    localpart = Map.get(member, :localpart, Map.get(member, "localpart", ""))
+
+    cond do
+      present?(display_name) and present?(localpart) -> "#{display_name} (#{localpart})"
+      present?(display_name) -> display_name
+      present?(localpart) -> localpart
+      true -> "Unknown member"
+    end
+  end
+
+  def governance_role_assignment_name(assignment) when is_map(assignment) do
+    user = Map.get(assignment, :user, Map.get(assignment, "user"))
+    governance_member_label(user || %{})
+  end
+
+  def governance_role_assignment_active?(assignment) when is_map(assignment) do
+    Map.get(assignment, :status, Map.get(assignment, "status", :active)) in [:active, "active"]
+  end
+
+  def governance_vote_tally_label(%{approve: approve, reject: reject, abstain: abstain}) do
+    "Approve #{approve} · Reject #{reject} · Abstain #{abstain}"
+  end
+
+  def governance_vote_tally_label(%{} = tally) do
+    approve = Map.get(tally, :approve, Map.get(tally, "approve", 0))
+    reject = Map.get(tally, :reject, Map.get(tally, "reject", 0))
+    abstain = Map.get(tally, :abstain, Map.get(tally, "abstain", 0))
+
+    "Approve #{approve} · Reject #{reject} · Abstain #{abstain}"
+  end
+
+  def governance_vote_tally_label(_), do: "No votes recorded"
+
+  def governance_rule_label(rule_config) when is_map(rule_config) do
+    mode = Map.get(rule_config, :approval_mode, Map.get(rule_config, "approval_mode", "majority"))
+    quorum = Map.get(rule_config, :quorum_percent, Map.get(rule_config, "quorum_percent", 50))
+
+    threshold =
+      Map.get(
+        rule_config,
+        :approval_threshold_percent,
+        Map.get(rule_config, "approval_threshold_percent", 51)
+      )
+
+    hours =
+      Map.get(rule_config, :voting_window_hours, Map.get(rule_config, "voting_window_hours", 72))
+
+    "#{mode}, quorum #{quorum}%, approval threshold #{threshold}%, window #{hours}h"
+  end
+
+  def governance_rule_label(_), do: "No voting rule configured"
+
+  def governance_bool_label(true), do: "Yes"
+  def governance_bool_label(false), do: "No"
+  def governance_bool_label(_), do: "Unknown"
+
   def scheduled_task_type_label(:run_agent_prompt), do: "Run Agent Prompt"
   def scheduled_task_type_label("run_agent_prompt"), do: "Run Agent Prompt"
   def scheduled_task_type_label(:post_room_message), do: "Post Room Message"
