@@ -19,12 +19,12 @@
 
       <label class="sw-field">
         <span>Display Name</span>
-        <input name="llm[name]" class="sw-input" placeholder="OpenAI Primary" />
+        <input name="llm[name]" class="sw-input" placeholder="Anthropic Primary" />
       </label>
 
       <label class="sw-field">
         <span>Slug (optional)</span>
-        <input name="llm[slug]" class="sw-input" placeholder="openai-primary" />
+        <input name="llm[slug]" class="sw-input" placeholder="anthropic-primary" />
       </label>
 
       <label class="sw-field">
@@ -38,7 +38,12 @@
 
       <label class="sw-field">
         <span>Model</span>
-        <input name="llm[model]" class="sw-input" value="local-default" />
+        <input
+          name="llm[model]"
+          class="sw-input"
+          value="local-default"
+          placeholder="claude-3-5-haiku-latest / gpt-4o-mini / llama3.1"
+        />
       </label>
 
       <label class="sw-field">
@@ -55,7 +60,11 @@
 
       <label class="sw-field sw-field-span">
         <span>Base URL (optional)</span>
-        <input name="llm[base_url]" class="sw-input" />
+        <input
+          name="llm[base_url]"
+          class="sw-input"
+          placeholder="https://api.anthropic.com or https://api.openai.com/v1"
+        />
       </label>
 
       <label class="sw-field sw-field-span">

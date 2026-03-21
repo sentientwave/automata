@@ -1,0 +1,48 @@
+<.admin_shell
+  flash={@flash}
+  title={"New Scheduled Task for #{@user.localpart}"}
+  subtitle="Create a recurring prompt run or room message for this agent."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/directory/users/#{@user.localpart}"} class="sw-btn sw-btn-ghost">
+        Back to agent
+      </a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Agent: {@agent_profile.display_name}</span>
+      <span class="sw-pill">Slug: {@agent_profile.slug}</span>
+      <span class="sw-pill">Timezone default: {@default_timezone}</span>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <h2 class="sw-card-title">Task Configuration</h2>
+    <p class="sw-card-copy mt-4">
+      Prompt tasks can run without a room target. Room-message tasks require a Matrix room ID.
+    </p>
+
+    <.scheduled_task_form
+      action={~p"/directory/users/#{@user.localpart}/tasks"}
+      title="Task Configuration"
+      submit_label="Create Scheduled Task"
+      task={
+        %{
+          "timezone" => @default_timezone,
+          "enabled" => true,
+          "schedule_interval" => 1,
+          "schedule_minute" => 0,
+          "schedule_type" => "daily",
+          "task_type" => "run_agent_prompt"
+        }
+      }
+      task_type_options={@scheduled_task_type_options}
+      schedule_options={@scheduled_task_schedule_options}
+      weekday_options={@weekday_options}
+    />
+  </section>
+</.admin_shell>

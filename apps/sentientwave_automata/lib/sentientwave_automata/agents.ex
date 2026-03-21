@@ -13,6 +13,8 @@ defmodule SentientwaveAutomata.Agents do
     Memory,
     Mention,
     Run,
+    ScheduledTask,
+    ScheduledTaskSchedule,
     Skill,
     SkillDesignation,
     ToolPermission
@@ -273,6 +275,25 @@ defmodule SentientwaveAutomata.Agents do
     Repo.get_by(ToolPermission, agent_id: agent_id, tool_name: tool_name, scope: scope)
   end
 
+  @spec reset_tool_permission(binary(), String.t(), String.t()) :: :ok
+  def reset_tool_permission(agent_id, tool_name, scope \\ "default") do
+    from(p in ToolPermission,
+      where: p.agent_id == ^agent_id and p.tool_name == ^tool_name and p.scope == ^scope
+    )
+    |> Repo.delete_all()
+
+    :ok
+  end
+
+  @spec list_tool_permissions_for_agent(binary()) :: [ToolPermission.t()]
+  def list_tool_permissions_for_agent(agent_id) when is_binary(agent_id) do
+    Repo.all(
+      from p in ToolPermission,
+        where: p.agent_id == ^agent_id,
+        order_by: [asc: p.tool_name, asc: p.scope]
+    )
+  end
+
   @spec create_mention(map()) :: {:ok, Mention.t()} | {:error, Ecto.Changeset.t()}
   def create_mention(attrs) do
     %Mention{}
@@ -379,6 +400,125 @@ defmodule SentientwaveAutomata.Agents do
     end
     |> AgentWallet.changeset(Map.put(attrs, :agent_id, agent_id))
     |> Repo.insert_or_update()
+  end
+
+  @spec list_scheduled_tasks(binary()) :: [ScheduledTask.t()]
+  def list_scheduled_tasks(agent_id) when is_binary(agent_id) do
+    Repo.all(
+      from t in ScheduledTask,
+        where: t.agent_id == ^agent_id,
+        preload: [:agent],
+        order_by: [asc: t.enabled, asc: t.next_run_at, asc: t.name]
+    )
+  end
+
+  @spec get_scheduled_task(binary()) :: ScheduledTask.t() | nil
+  def get_scheduled_task(id) when is_binary(id) do
+    Repo.one(
+      from t in ScheduledTask,
+        where: t.id == ^id,
+        preload: [:agent]
+    )
+  end
+
+  @spec create_scheduled_task(binary(), map()) ::
+          {:ok, ScheduledTask.t()} | {:error, Ecto.Changeset.t() | term()}
+  def create_scheduled_task(agent_id, attrs) when is_binary(agent_id) and is_map(attrs) do
+    attrs =
+      attrs
+      |> normalize_scheduled_task_attrs()
+      |> Map.put(:agent_id, agent_id)
+
+    %ScheduledTask{}
+    |> ScheduledTask.changeset(attrs)
+    |> put_initial_next_run()
+    |> Repo.insert()
+    |> case do
+      {:ok, task} -> {:ok, Repo.preload(task, [:agent])}
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @spec update_scheduled_task(ScheduledTask.t(), map()) ::
+          {:ok, ScheduledTask.t()} | {:error, Ecto.Changeset.t() | term()}
+  def update_scheduled_task(%ScheduledTask{} = task, attrs) when is_map(attrs) do
+    attrs = normalize_scheduled_task_attrs(attrs)
+
+    task
+    |> ScheduledTask.changeset(attrs)
+    |> put_initial_next_run()
+    |> Repo.update()
+    |> case do
+      {:ok, updated_task} -> {:ok, Repo.preload(updated_task, [:agent])}
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @spec delete_scheduled_task(ScheduledTask.t()) :: :ok | {:error, term()}
+  def delete_scheduled_task(%ScheduledTask{} = task) do
+    case Repo.delete(task) do
+      {:ok, _task} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec set_scheduled_task_enabled(ScheduledTask.t(), boolean()) ::
+          {:ok, ScheduledTask.t()} | {:error, Ecto.Changeset.t() | term()}
+  def set_scheduled_task_enabled(%ScheduledTask{} = task, enabled) when is_boolean(enabled) do
+    attrs =
+      if enabled do
+        %{enabled: true}
+      else
+        %{enabled: false, next_run_at: nil}
+      end
+
+    update_scheduled_task(task, attrs)
+  end
+
+  @spec list_due_scheduled_tasks(keyword()) :: [ScheduledTask.t()]
+  def list_due_scheduled_tasks(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 10)
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    Repo.all(
+      from t in ScheduledTask,
+        where: t.enabled == true and not is_nil(t.next_run_at) and t.next_run_at <= ^now,
+        preload: [:agent],
+        order_by: [asc: t.next_run_at, asc: t.inserted_at],
+        limit: ^limit
+    )
+  end
+
+  @spec claim_scheduled_task(ScheduledTask.t()) ::
+          {:ok, ScheduledTask.t()} | {:error, :stale | Ecto.Changeset.t() | term()}
+  def claim_scheduled_task(%ScheduledTask{} = task) do
+    with {:ok, next_run_at} <-
+           ScheduledTaskSchedule.next_run_after(task, task.next_run_at || DateTime.utc_now()) do
+      {count, _} =
+        from(t in ScheduledTask,
+          where:
+            t.id == ^task.id and t.enabled == true and not is_nil(t.next_run_at) and
+              t.next_run_at == ^task.next_run_at
+        )
+        |> Repo.update_all(set: [next_run_at: next_run_at, updated_at: DateTime.utc_now()])
+
+      if count == 1 do
+        {:ok, Repo.preload(%{task | next_run_at: next_run_at}, [:agent])}
+      else
+        {:error, :stale}
+      end
+    end
+  end
+
+  @spec record_scheduled_task_result(ScheduledTask.t(), map()) ::
+          {:ok, ScheduledTask.t()} | {:error, Ecto.Changeset.t()}
+  def record_scheduled_task_result(%ScheduledTask{} = task, outcome) when is_map(outcome) do
+    task
+    |> ScheduledTask.changeset(%{
+      last_run_at: DateTime.utc_now(),
+      last_outcome: outcome
+    })
+    |> Repo.update()
   end
 
   defp upsert_global_skill(attrs) do
@@ -569,6 +709,130 @@ defmodule SentientwaveAutomata.Agents do
 
   defp normalize_map(value) when is_map(value), do: value
   defp normalize_map(_), do: %{}
+
+  defp normalize_scheduled_task_attrs(attrs) do
+    attrs
+    |> Map.take([
+      :name,
+      "name",
+      :enabled,
+      "enabled",
+      :task_type,
+      "task_type",
+      :schedule_type,
+      "schedule_type",
+      :schedule_interval,
+      "schedule_interval",
+      :schedule_hour,
+      "schedule_hour",
+      :schedule_minute,
+      "schedule_minute",
+      :schedule_weekday,
+      "schedule_weekday",
+      :timezone,
+      "timezone",
+      :room_id,
+      "room_id",
+      :prompt_body,
+      "prompt_body",
+      :message_body,
+      "message_body",
+      :metadata,
+      "metadata",
+      :next_run_at,
+      "next_run_at"
+    ])
+    |> normalize_key(:name, fn value -> value |> to_string() |> String.trim() end)
+    |> normalize_key(:enabled, &truthy_value/1)
+    |> normalize_key(:task_type, &normalize_task_type/1)
+    |> normalize_key(:schedule_type, &normalize_schedule_type/1)
+    |> normalize_key(:schedule_interval, &normalize_integer(&1, 1))
+    |> normalize_key(:schedule_hour, &normalize_optional_integer/1)
+    |> normalize_key(:schedule_minute, &normalize_integer(&1, 0))
+    |> normalize_key(:schedule_weekday, &normalize_optional_integer/1)
+    |> normalize_key(:timezone, fn value ->
+      value |> to_string() |> String.trim() |> default_timezone()
+    end)
+    |> normalize_key(:room_id, fn value -> value |> to_string() |> String.trim() end)
+    |> normalize_key(:prompt_body, fn value -> value |> to_string() |> String.trim() end)
+    |> normalize_key(:message_body, fn value -> value |> to_string() |> String.trim() end)
+    |> normalize_key(:metadata, &normalize_map/1)
+  end
+
+  defp put_initial_next_run(%Ecto.Changeset{} = changeset) do
+    enabled = Ecto.Changeset.get_field(changeset, :enabled)
+
+    cond do
+      enabled == false ->
+        Ecto.Changeset.put_change(changeset, :next_run_at, nil)
+
+      true ->
+        case ScheduledTaskSchedule.initial_next_run(Ecto.Changeset.apply_changes(changeset)) do
+          {:ok, next_run_at} ->
+            Ecto.Changeset.put_change(changeset, :next_run_at, next_run_at)
+
+          {:error, _reason} ->
+            changeset
+        end
+    end
+  end
+
+  defp normalize_key(map, key, transform) do
+    cond do
+      Map.has_key?(map, key) ->
+        Map.update!(map, key, transform)
+
+      Map.has_key?(map, Atom.to_string(key)) ->
+        map
+        |> Map.put(key, transform.(Map.get(map, Atom.to_string(key))))
+        |> Map.delete(Atom.to_string(key))
+
+      true ->
+        map
+    end
+  end
+
+  defp normalize_task_type(value) when value in [:run_agent_prompt, "run_agent_prompt"],
+    do: :run_agent_prompt
+
+  defp normalize_task_type(value) when value in [:post_room_message, "post_room_message"],
+    do: :post_room_message
+
+  defp normalize_task_type(_), do: :run_agent_prompt
+
+  defp normalize_schedule_type(value) when value in [:hourly, "hourly"], do: :hourly
+  defp normalize_schedule_type(value) when value in [:daily, "daily"], do: :daily
+  defp normalize_schedule_type(value) when value in [:weekly, "weekly"], do: :weekly
+  defp normalize_schedule_type(_), do: :daily
+
+  defp normalize_integer(value, _default) when is_integer(value), do: value
+
+  defp normalize_integer(value, default) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, _} -> parsed
+      :error -> default
+    end
+  end
+
+  defp normalize_integer(_value, default), do: default
+
+  defp normalize_optional_integer(value) when value in [nil, ""], do: nil
+
+  defp normalize_optional_integer(value) when is_integer(value), do: value
+
+  defp normalize_optional_integer(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, _} -> parsed
+      :error -> nil
+    end
+  end
+
+  defp normalize_optional_integer(_), do: nil
+
+  defp truthy_value(value), do: value in [true, "true", "1", 1, "on"]
+
+  defp default_timezone(""), do: "Etc/UTC"
+  defp default_timezone(value), do: value
 
   defp designation_preloads, do: [:agent, :skill]
 

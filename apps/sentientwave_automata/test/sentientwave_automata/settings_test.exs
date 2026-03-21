@@ -31,6 +31,23 @@ defmodule SentientwaveAutomata.SettingsTest do
     assert :ok = Settings.set_default_llm_provider(p1.id)
   end
 
+  test "accepts anthropic provider configs" do
+    assert {:ok, provider} =
+             Settings.create_llm_provider_config(%{
+               "name" => "Anthropic Primary",
+               "slug" => "anthropic-primary",
+               "provider" => "anthropic",
+               "model" => "claude-3-5-haiku-latest",
+               "base_url" => "https://api.anthropic.com",
+               "api_token" => "sk-ant-test",
+               "enabled" => true
+             })
+
+    assert provider.provider == "anthropic"
+    assert provider.model == "claude-3-5-haiku-latest"
+    assert provider.timeout_seconds == 600
+  end
+
   test "cannot delete last provider" do
     assert {:ok, provider} =
              Settings.create_llm_provider_config(%{

@@ -4,6 +4,8 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
   import Plug.Test, only: [init_test_session: 2]
 
   alias SentientwaveAutomata.Agents
+  alias SentientwaveAutomata.Matrix.Directory
+  alias SentientwaveAutomata.Settings
 
   test "GET / redirects to login when unauthenticated", %{conn: conn} do
     conn = get(conn, ~p"/")
@@ -37,6 +39,17 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
     assert html_response(conn, 200) =~ "LLM Provider Management"
   end
 
+  test "GET /settings/llm/providers/new includes Anthropic in provider options", %{conn: conn} do
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/settings/llm/providers/new")
+
+    body = html_response(conn, 200)
+    assert body =~ "Add LLM Provider"
+    assert body =~ "Anthropic"
+  end
+
   test "GET /settings/skills renders skill catalog when authenticated", %{conn: conn} do
     assert {:ok, _skill} =
              Agents.create_skill(%{
@@ -68,6 +81,138 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> get(~p"/settings/tools")
 
     assert html_response(conn, 200) =~ "Tool Management"
+  end
+
+  test "GET /directory/users renders directory page when authenticated", %{conn: conn} do
+    assert {:ok, _user} =
+             Directory.upsert_user(%{
+               "localpart" => "directory-human",
+               "kind" => "person",
+               "display_name" => "Directory Human",
+               "password" => "VerySecurePass123!"
+             })
+
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/directory/users")
+
+    body = html_response(conn, 200)
+    assert body =~ "Directory"
+    assert body =~ "directory-human"
+  end
+
+  test "POST /directory/users creates a service account", %{conn: conn} do
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> post(~p"/directory/users", %{
+        "user" => %{
+          "localpart" => "svc-bot",
+          "kind" => "service",
+          "display_name" => "Service Bot",
+          "admin" => "false"
+        }
+      })
+
+    assert redirected_to(conn) == "/directory/users/svc-bot"
+    assert %{kind: :service} = Directory.get_user("svc-bot")
+  end
+
+  test "directory user detail hides agent panels for service accounts", %{conn: conn} do
+    assert {:ok, _user} =
+             Directory.upsert_user(%{
+               "localpart" => "service-runner",
+               "kind" => "service",
+               "display_name" => "Service Runner",
+               "password" => "VerySecurePass123!"
+             })
+
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/directory/users/service-runner")
+
+    body = html_response(conn, 200)
+    assert body =~ "Matrix Account Summary"
+    refute body =~ "Agent Runtime Settings"
+    refute body =~ "Designated Tools"
+  end
+
+  test "directory user detail shows agent settings, tools, and tasks", %{conn: conn} do
+    assert {:ok, _directory_user} =
+             Directory.upsert_user(%{
+               "localpart" => "ops-agent",
+               "kind" => "agent",
+               "display_name" => "Ops Agent",
+               "password" => "VerySecurePass123!"
+             })
+
+    assert {:ok, agent} =
+             Agents.upsert_agent(%{
+               slug: "ops-agent",
+               kind: :agent,
+               display_name: "Ops Agent",
+               matrix_localpart: "ops-agent",
+               status: :active
+             })
+
+    assert {:ok, _wallet} =
+             Agents.upsert_agent_wallet(agent.id, %{
+               kind: "personal",
+               status: "active",
+               matrix_credentials: %{
+                 localpart: "ops-agent",
+                 mxid: "@ops-agent:localhost",
+                 password: "VerySecurePass123!",
+                 homeserver_url: "http://localhost:8008"
+               },
+               metadata: %{}
+             })
+
+    assert {:ok, _tool} =
+             Settings.create_tool_config(%{
+               "name" => "Brave Search",
+               "slug" => "brave-search-page-test",
+               "tool_name" => "brave_search",
+               "base_url" => "https://api.search.brave.com",
+               "enabled" => true
+             })
+
+    assert {:ok, _permission} =
+             Agents.set_tool_permission(%{
+               agent_id: agent.id,
+               tool_name: "brave_search",
+               scope: "default",
+               allowed: false,
+               constraints: %{}
+             })
+
+    assert {:ok, _task} =
+             Agents.create_scheduled_task(agent.id, %{
+               "name" => "Weekly Summary",
+               "enabled" => "true",
+               "task_type" => "run_agent_prompt",
+               "schedule_type" => "weekly",
+               "schedule_interval" => "1",
+               "schedule_hour" => "9",
+               "schedule_minute" => "0",
+               "schedule_weekday" => "1",
+               "timezone" => "Etc/UTC",
+               "prompt_body" => "Share the summary"
+             })
+
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/directory/users/ops-agent")
+
+    body = html_response(conn, 200)
+    assert body =~ "Agent Runtime Settings"
+    assert body =~ "Designated Tools"
+    assert body =~ "Scheduled Tasks"
+    assert body =~ "Weekly Summary"
+    assert body =~ "Brave Search"
   end
 
   test "POST /settings/skills creates a new skill", %{conn: conn} do

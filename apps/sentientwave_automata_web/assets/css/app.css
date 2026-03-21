@@ -443,6 +443,12 @@
   background: var(--sw-panel-soft-2);
 }
 
+.sw-pill.is-warning {
+  border-color: var(--sw-warning-border);
+  color: var(--sw-warning);
+  background: var(--sw-warning-soft);
+}
+
 .sw-stack {
   margin-top: 1rem;
   display: grid;

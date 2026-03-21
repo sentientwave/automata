@@ -1,0 +1,79 @@
+<.admin_shell
+  flash={@flash}
+  title={"Scheduled Task: #{@task.name}"}
+  subtitle="Adjust schedule, payload, and enablement for this agent-owned recurring task."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/directory/users/#{@user.localpart}"} class="sw-btn sw-btn-ghost">
+        Back to agent
+      </a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">{scheduled_task_type_label(@task.task_type)}</span>
+      <span class={["sw-pill", @task.enabled && "is-ok"]}>
+        {if @task.enabled, do: "Enabled", else: "Disabled"}
+      </span>
+      <span class="sw-pill">Next run: {format_timestamp(@task.next_run_at)}</span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Edit Task</h2>
+      <.scheduled_task_form
+        action={~p"/directory/users/#{@user.localpart}/tasks/#{@task.id}"}
+        title="Edit Task"
+        submit_label="Save Scheduled Task"
+        task={@task}
+        task_type_options={@scheduled_task_type_options}
+        schedule_options={@scheduled_task_schedule_options}
+        weekday_options={@weekday_options}
+      />
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Execution Summary</h2>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Schedule</p>
+          <p class="sw-detail-value">{scheduled_task_schedule_label(@task)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Last Run</p>
+          <p class="sw-detail-value">{format_timestamp(@task.last_run_at)}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Last Outcome</p>
+          <pre class="sw-code-block"><code><%= pretty_json(@task.last_outcome) %></code></pre>
+        </div>
+      </div>
+
+      <div class="sw-actions mt-6">
+        <form
+          action={~p"/directory/users/#{@user.localpart}/tasks/#{@task.id}/toggle"}
+          method="post"
+        >
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <input type="hidden" name="enabled" value={if @task.enabled, do: "false", else: "true"} />
+          <button type="submit" class="sw-btn sw-btn-ghost">
+            {if @task.enabled, do: "Disable Task", else: "Enable Task"}
+          </button>
+        </form>
+
+        <form action={~p"/directory/users/#{@user.localpart}/tasks/#{@task.id}"} method="post">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <input type="hidden" name="_method" value="delete" />
+          <button type="submit" class="sw-btn sw-btn-danger">Delete Task</button>
+        </form>
+      </div>
+    </article>
+  </section>
+</.admin_shell>

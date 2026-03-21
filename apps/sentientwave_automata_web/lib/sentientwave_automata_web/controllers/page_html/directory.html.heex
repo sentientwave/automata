@@ -1,0 +1,131 @@
+<.admin_shell
+  flash={@flash}
+  title="Directory"
+  subtitle="Manage human, agent, and service identities from one shared operational directory."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Directory Overview</h2>
+        <p class="sw-card-copy">
+          Directory identities are the source of truth for Matrix-managed humans, agents, and services.
+        </p>
+      </div>
+      <a href={~p"/directory/users/new"} class="sw-btn sw-btn-primary">Add User</a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">Visible: {@filtered_count}</span>
+      <span class="sw-pill">Total: {@total_count}</span>
+      <span class="sw-pill">Agents: {@agent_count}</span>
+      <span class="sw-pill">Services: {@service_count}</span>
+    </div>
+
+    <form action={~p"/directory/users"} method="get" class="sw-form-grid mt-5">
+      <label class="sw-field sw-field-span">
+        <span>Search</span>
+        <input
+          name="filters[q]"
+          class="sw-input"
+          value={@filter_form[:q].value}
+          placeholder="Search by localpart or display name"
+        />
+      </label>
+
+      <label class="sw-field">
+        <span>User Type</span>
+        <select name="filters[kind]" class="sw-select">
+          <%= for {label, value} <- @directory_kind_filter_options do %>
+            <option value={value} selected={@filter_form[:kind].value == value}>{label}</option>
+          <% end %>
+        </select>
+      </label>
+
+      <div class="sw-actions sw-field-span">
+        <button type="submit" class="sw-btn sw-btn-primary">Apply Filters</button>
+        <a href={~p"/directory/users"} class="sw-btn sw-btn-ghost">Reset</a>
+      </div>
+    </form>
+
+    <div :if={@active_filters != []} class="sw-pill-list mt-4">
+      <span :for={label <- @active_filters} class="sw-pill">{label}</span>
+    </div>
+  </section>
+
+  <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Directory Users</h2>
+        <p class="sw-card-copy">
+          Open any identity to edit details, rotate credentials, or inspect agent runtime state.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@users == []} class="sw-empty mt-5">
+      <h3>No directory users found</h3>
+      <p>Adjust filters or add a new human, agent, or service account.</p>
+    </div>
+
+    <div :if={@users != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Type</th>
+            <th>Display Name</th>
+            <th>Admin</th>
+            <th>Operational</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={user <- @users}>
+            <td>
+              <div class="sw-table-primary">{user.localpart}</div>
+              <div class="sw-table-secondary">@{user.localpart}:{@status.homeserver_domain}</div>
+            </td>
+            <td>
+              <span class={["sw-pill", directory_kind_class(user.kind)]}>
+                {directory_kind_label(user.kind)}
+              </span>
+            </td>
+            <td>{user.display_name}</td>
+            <td>
+              <span class={["sw-pill", user.admin && "is-ok"]}>
+                {if user.admin, do: "Admin", else: "Standard"}
+              </span>
+            </td>
+            <td>
+              <%= if user.kind == :agent do %>
+                <span class={[
+                  "sw-pill",
+                  operational_status_class(
+                    SentientwaveAutomata.DirectoryManager.operational_status(user)
+                  )
+                ]}>
+                  {SentientwaveAutomata.DirectoryManager.operational_status(user)}
+                </span>
+              <% else %>
+                <span class="sw-pill">n/a</span>
+              <% end %>
+            </td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/directory/users/#{user.localpart}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Open
+                </a>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</.admin_shell>

@@ -2,14 +2,29 @@ defmodule SentientwaveAutomataWeb.PageController do
   use SentientwaveAutomataWeb, :controller
 
   alias SentientwaveAutomata.Agents
+  alias SentientwaveAutomata.DirectoryManager
+  alias SentientwaveAutomata.Matrix.Directory
   alias SentientwaveAutomata.Matrix.Onboarding.Artifacts
   alias SentientwaveAutomata.Settings
   alias SentientwaveAutomata.System.Status
   alias SentientwaveAutomataWeb.AdminAuth
 
+  @directory_kind_filter_options [
+    {"All types", ""},
+    {"Human", "person"},
+    {"Agent", "agent"},
+    {"Service", "service"}
+  ]
+  @directory_kind_options [
+    {"Human", "person"},
+    {"Agent", "agent"},
+    {"Service", "service"}
+  ]
+  @agent_status_options [{"Active", "active"}, {"Disabled", "disabled"}]
   @provider_options [
     {"Local (Fallback)", "local"},
     {"OpenAI", "openai"},
+    {"Anthropic", "anthropic"},
     {"OpenRouter", "openrouter"},
     {"LM Studio", "lm-studio"},
     {"Ollama", "ollama"}
@@ -18,6 +33,24 @@ defmodule SentientwaveAutomataWeb.PageController do
     {"Brave Internet Search", "brave_search"},
     {"System Directory Admin", "system_directory_admin"},
     {"Run Shell", "run_shell"}
+  ]
+  @scheduled_task_type_options [
+    {"Run Agent Prompt", "run_agent_prompt"},
+    {"Post Room Message", "post_room_message"}
+  ]
+  @scheduled_task_schedule_options [
+    {"Hourly", "hourly"},
+    {"Daily", "daily"},
+    {"Weekly", "weekly"}
+  ]
+  @weekday_options [
+    {"Monday", "1"},
+    {"Tuesday", "2"},
+    {"Wednesday", "3"},
+    {"Thursday", "4"},
+    {"Friday", "5"},
+    {"Saturday", "6"},
+    {"Sunday", "7"}
   ]
   @skill_enabled_options [{"Any status", ""}, {"Enabled", "true"}, {"Disabled", "false"}]
   @trace_status_options [{"Any status", ""}, {"Successful", "ok"}, {"Errored", "error"}]
@@ -67,6 +100,124 @@ defmodule SentientwaveAutomataWeb.PageController do
       admin_user: AdminAuth.expected_username(),
       nav: nav("onboarding")
     )
+  end
+
+  def directory(conn, params) do
+    status = Status.summary()
+    {directory_filters, directory_filter_form} = directory_filters_from_params(params)
+    users = Directory.list_users(directory_filters)
+    filtered_count = Directory.count_users(directory_filters)
+    total_count = Directory.count_users()
+    active_filters = active_directory_filters(directory_filters)
+
+    render(conn, :directory,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("directory"),
+      users: users,
+      filtered_count: filtered_count,
+      total_count: total_count,
+      agent_count: Directory.count_users(kind: :agent),
+      service_count: Directory.count_users(kind: :service),
+      filter_form: directory_filter_form,
+      active_filters: active_filters,
+      directory_kind_filter_options: @directory_kind_filter_options
+    )
+  end
+
+  def new_directory_user(conn, _params) do
+    status = Status.summary()
+
+    render(conn, :new_directory_user,
+      status: status,
+      admin_user: AdminAuth.expected_username(),
+      nav: nav("directory"),
+      directory_kind_options: @directory_kind_options,
+      default_timezone: default_task_timezone()
+    )
+  end
+
+  def directory_user(conn, %{"localpart" => localpart}) do
+    status = Status.summary()
+
+    case Directory.get_user(localpart) do
+      nil ->
+        conn
+        |> put_flash(:error, "Directory user not found.")
+        |> redirect(to: ~p"/directory/users")
+
+      user ->
+        agent_profile =
+          if user.kind == :agent do
+            Agents.ensure_agent_from_directory(user.localpart)
+          end
+
+        agent_wallet = agent_profile && Agents.get_agent_wallet(agent_profile.id)
+        tool_rows = (agent_profile && agent_tool_rows(agent_profile)) || []
+        scheduled_tasks = (agent_profile && Agents.list_scheduled_tasks(agent_profile.id)) || []
+
+        render(conn, :directory_user,
+          status: status,
+          admin_user: AdminAuth.expected_username(),
+          nav: nav("directory"),
+          user: user,
+          agent_profile: agent_profile,
+          agent_wallet: agent_wallet,
+          operational_status: DirectoryManager.operational_status(user),
+          tool_rows: tool_rows,
+          scheduled_tasks: scheduled_tasks,
+          directory_kind_options: @directory_kind_options,
+          agent_status_options: @agent_status_options
+        )
+    end
+  end
+
+  def new_directory_task(conn, %{"localpart" => localpart}) do
+    status = Status.summary()
+
+    with %{kind: :agent} = user <- Directory.get_user(localpart),
+         %{} = agent_profile <- Agents.ensure_agent_from_directory(localpart) do
+      render(conn, :new_directory_task,
+        status: status,
+        admin_user: AdminAuth.expected_username(),
+        nav: nav("directory"),
+        user: user,
+        agent_profile: agent_profile,
+        scheduled_task_type_options: @scheduled_task_type_options,
+        scheduled_task_schedule_options: @scheduled_task_schedule_options,
+        weekday_options: @weekday_options,
+        default_timezone: default_task_timezone()
+      )
+    else
+      _ ->
+        conn
+        |> put_flash(:error, "Only agent users can have scheduled tasks.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def directory_task(conn, %{"localpart" => localpart, "id" => id}) do
+    status = Status.summary()
+
+    with %{kind: :agent} = user <- Directory.get_user(localpart),
+         %{} = task <- Agents.get_scheduled_task(id),
+         true <- task.agent && task.agent.matrix_localpart == user.localpart do
+      render(conn, :directory_task,
+        status: status,
+        admin_user: AdminAuth.expected_username(),
+        nav: nav("directory"),
+        user: user,
+        task: task,
+        scheduled_task_type_options: @scheduled_task_type_options,
+        scheduled_task_schedule_options: @scheduled_task_schedule_options,
+        weekday_options: @weekday_options
+      )
+    else
+      _ ->
+        conn
+        |> put_flash(:error, "Scheduled task not found.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
   end
 
   def llm(conn, _params) do
@@ -522,6 +673,264 @@ defmodule SentientwaveAutomataWeb.PageController do
     end
   end
 
+  def create_directory_user(conn, %{"user" => user_params}) do
+    case DirectoryManager.create_user(sanitize_directory_user_params(user_params)) do
+      {:ok, result} ->
+        conn
+        |> put_flash(:info, generated_password_message(result))
+        |> put_warning_flash(result.warnings)
+        |> redirect(to: ~p"/directory/users/#{result.user.localpart}")
+
+      {:error, errors} ->
+        conn
+        |> put_flash(:error, directory_error_message(errors, "Could not create directory user."))
+        |> redirect(to: ~p"/directory/users/new")
+    end
+  end
+
+  def create_directory_user(conn, _params) do
+    conn
+    |> put_flash(:error, "Invalid directory user payload.")
+    |> redirect(to: ~p"/directory/users")
+  end
+
+  def update_directory_user(conn, %{"localpart" => localpart, "user" => user_params}) do
+    case DirectoryManager.update_user(localpart, sanitize_directory_user_params(user_params)) do
+      {:ok, result} ->
+        conn
+        |> put_flash(:info, "Directory user updated.")
+        |> put_warning_flash(result.warnings)
+        |> redirect(to: ~p"/directory/users/#{result.user.localpart}")
+
+      {:error, :not_found} ->
+        conn
+        |> put_flash(:error, "Directory user not found.")
+        |> redirect(to: ~p"/directory/users")
+
+      {:error, errors} ->
+        conn
+        |> put_flash(:error, directory_error_message(errors, "Could not update directory user."))
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def update_directory_user(conn, %{"localpart" => localpart}) do
+    conn
+    |> put_flash(:error, "Invalid directory user payload.")
+    |> redirect(to: ~p"/directory/users/#{localpart}")
+  end
+
+  def rotate_directory_user_password(conn, %{"localpart" => localpart}) do
+    case DirectoryManager.rotate_password(localpart) do
+      {:ok, result} ->
+        conn
+        |> put_flash(:info, generated_password_message(result))
+        |> put_warning_flash(result.warnings)
+        |> redirect(to: ~p"/directory/users/#{result.user.localpart}")
+
+      {:error, :not_found} ->
+        conn
+        |> put_flash(:error, "Directory user not found.")
+        |> redirect(to: ~p"/directory/users")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, directory_error_message(reason, "Could not rotate credentials."))
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def delete_directory_user(conn, %{"localpart" => localpart}) do
+    case DirectoryManager.deactivate_user(localpart) do
+      {:ok, warnings} ->
+        conn
+        |> put_flash(:info, "Directory user deactivated.")
+        |> put_warning_flash(warnings)
+        |> redirect(to: ~p"/directory/users")
+
+      {:error, :not_found} ->
+        conn
+        |> put_flash(:error, "Directory user not found.")
+        |> redirect(to: ~p"/directory/users")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(
+          :error,
+          directory_error_message(reason, "Could not deactivate directory user.")
+        )
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def update_directory_agent_profile(
+        conn,
+        %{"localpart" => localpart, "agent_profile" => profile_params}
+      ) do
+    with %{kind: :agent} = user <- Directory.get_user(localpart),
+         %{} = current_profile <- Agents.ensure_agent_from_directory(localpart),
+         {:ok, metadata} <- parse_metadata_json(Map.get(profile_params, "metadata", "{}")),
+         {:ok, user_result} <- maybe_sync_agent_directory_identity(user, profile_params),
+         target_localpart = user_result.user.localpart,
+         profile_attrs =
+           sanitize_agent_profile_params(
+             profile_params,
+             current_profile,
+             target_localpart,
+             metadata
+           ),
+         {:ok, _profile} <- Agents.upsert_agent(profile_attrs) do
+      conn
+      |> put_flash(:info, "Agent runtime settings updated.")
+      |> put_warning_flash(user_result.warnings)
+      |> redirect(to: ~p"/directory/users/#{target_localpart}")
+    else
+      nil ->
+        conn
+        |> put_flash(:error, "Agent user not found.")
+        |> redirect(to: ~p"/directory/users")
+
+      {:error, :invalid_metadata} ->
+        conn
+        |> put_flash(:error, "Agent metadata must be valid JSON.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+
+      {:error, errors} ->
+        conn
+        |> put_flash(
+          :error,
+          directory_error_message(errors, "Could not update agent runtime settings.")
+        )
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def update_directory_agent_profile(conn, %{"localpart" => localpart}) do
+    conn
+    |> put_flash(:error, "Invalid agent runtime payload.")
+    |> redirect(to: ~p"/directory/users/#{localpart}")
+  end
+
+  def update_directory_tool_permission(
+        conn,
+        %{"localpart" => localpart, "tool_permission" => permission_params}
+      ) do
+    with %{kind: :agent} <- Directory.get_user(localpart),
+         %{} = agent <- Agents.ensure_agent_from_directory(localpart),
+         tool_name when is_binary(tool_name) and tool_name != "" <-
+           permission_params |> Map.get("tool_name", "") |> String.trim(),
+         action when action in ["allow", "block", "default"] <-
+           permission_params |> Map.get("action", "") |> String.trim(),
+         :ok <- persist_tool_override(agent, tool_name, action) do
+      conn
+      |> put_flash(:info, "Tool access updated.")
+      |> redirect(to: ~p"/directory/users/#{localpart}")
+    else
+      _ ->
+        conn
+        |> put_flash(:error, "Could not update tool access.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def create_directory_task(conn, %{"localpart" => localpart, "task" => task_params}) do
+    with %{kind: :agent} <- Directory.get_user(localpart),
+         %{} = agent <- Agents.ensure_agent_from_directory(localpart),
+         {:ok, _task} <- Agents.create_scheduled_task(agent.id, sanitize_task_params(task_params)) do
+      conn
+      |> put_flash(:info, "Scheduled task created.")
+      |> redirect(to: ~p"/directory/users/#{localpart}")
+    else
+      {:error, changeset} ->
+        conn
+        |> put_flash(
+          :error,
+          directory_error_message(changeset, "Could not create scheduled task.")
+        )
+        |> redirect(to: ~p"/directory/users/#{localpart}/tasks/new")
+
+      _ ->
+        conn
+        |> put_flash(:error, "Only agent users can have scheduled tasks.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def update_directory_task(conn, %{"localpart" => localpart, "id" => id, "task" => task_params}) do
+    case Agents.get_scheduled_task(id) do
+      %{agent: %{matrix_localpart: ^localpart}} = task ->
+        case Agents.update_scheduled_task(task, sanitize_task_params(task_params)) do
+          {:ok, _task} ->
+            conn
+            |> put_flash(:info, "Scheduled task updated.")
+            |> redirect(to: ~p"/directory/users/#{localpart}/tasks/#{id}")
+
+          {:error, changeset} ->
+            conn
+            |> put_flash(
+              :error,
+              directory_error_message(changeset, "Could not update scheduled task.")
+            )
+            |> redirect(to: ~p"/directory/users/#{localpart}/tasks/#{id}")
+        end
+
+      _ ->
+        conn
+        |> put_flash(:error, "Scheduled task not found.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def toggle_directory_task(conn, %{"localpart" => localpart, "id" => id, "enabled" => enabled}) do
+    case Agents.get_scheduled_task(id) do
+      %{agent: %{matrix_localpart: ^localpart}} = task ->
+        case Agents.set_scheduled_task_enabled(task, truthy?(enabled)) do
+          {:ok, _task} ->
+            conn
+            |> put_flash(:info, "Scheduled task state updated.")
+            |> redirect(to: ~p"/directory/users/#{localpart}")
+
+          {:error, changeset} ->
+            conn
+            |> put_flash(
+              :error,
+              directory_error_message(changeset, "Could not update scheduled task state.")
+            )
+            |> redirect(to: ~p"/directory/users/#{localpart}")
+        end
+
+      _ ->
+        conn
+        |> put_flash(:error, "Scheduled task not found.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
+  def delete_directory_task(conn, %{"localpart" => localpart, "id" => id}) do
+    case Agents.get_scheduled_task(id) do
+      %{agent: %{matrix_localpart: ^localpart}} = task ->
+        case Agents.delete_scheduled_task(task) do
+          :ok ->
+            conn
+            |> put_flash(:info, "Scheduled task removed.")
+            |> redirect(to: ~p"/directory/users/#{localpart}")
+
+          {:error, reason} ->
+            conn
+            |> put_flash(
+              :error,
+              directory_error_message(reason, "Could not remove scheduled task.")
+            )
+            |> redirect(to: ~p"/directory/users/#{localpart}")
+        end
+
+      _ ->
+        conn
+        |> put_flash(:error, "Scheduled task not found.")
+        |> redirect(to: ~p"/directory/users/#{localpart}")
+    end
+  end
+
   defp render_llm(conn) do
     status = Status.summary()
     effective = Settings.llm_provider_effective()
@@ -640,6 +1049,47 @@ defmodule SentientwaveAutomataWeb.PageController do
     [{"Any provider", ""} | @provider_options]
   end
 
+  defp directory_filters_from_params(params) do
+    raw = Map.get(params, "filters", %{})
+
+    form_filters = %{
+      "q" => fetch_directory_filter(raw, "q"),
+      "kind" => fetch_directory_filter(raw, "kind")
+    }
+
+    query_filters =
+      []
+      |> maybe_put_directory_filter(:q, form_filters["q"])
+      |> maybe_put_directory_kind_filter(form_filters["kind"])
+
+    {query_filters, Phoenix.Component.to_form(form_filters, as: :filters)}
+  end
+
+  defp active_directory_filters(filters) do
+    labels = %{
+      q: "Search",
+      kind: "Type"
+    }
+
+    filters
+    |> Enum.reduce([], fn {key, value}, acc ->
+      if value in [nil, ""] do
+        acc
+      else
+        rendered =
+          case {key, value} do
+            {:kind, :person} -> "Human"
+            {:kind, :agent} -> "Agent"
+            {:kind, :service} -> "Service"
+            _ -> value
+          end
+
+        ["#{Map.get(labels, key, key)}: #{rendered}" | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
   defp nav(active) do
     [
       %{id: "dashboard", label: "Dashboard", href: "/dashboard", active: active == "dashboard"},
@@ -648,6 +1098,12 @@ defmodule SentientwaveAutomataWeb.PageController do
         label: "Onboarding",
         href: "/onboarding",
         active: active == "onboarding"
+      },
+      %{
+        id: "directory",
+        label: "Directory",
+        href: "/directory/users",
+        active: active == "directory"
       },
       %{id: "skills", label: "Skills", href: "/settings/skills", active: active == "skills"},
       %{id: "llm", label: "LLM Providers", href: "/settings/llm", active: active == "llm"},
@@ -712,6 +1168,64 @@ defmodule SentientwaveAutomataWeb.PageController do
     }
   end
 
+  defp sanitize_directory_user_params(params) do
+    %{
+      "localpart" => params |> Map.get("localpart", "") |> to_string() |> String.trim(),
+      "kind" => params |> Map.get("kind", "person") |> to_string() |> String.trim(),
+      "display_name" => params |> Map.get("display_name", "") |> to_string() |> String.trim(),
+      "admin" => truthy?(Map.get(params, "admin", "false"))
+    }
+  end
+
+  defp sanitize_agent_profile_params(params, current_profile, matrix_localpart, metadata) do
+    slug =
+      params
+      |> Map.get("slug", current_profile.slug || matrix_localpart)
+      |> to_string()
+      |> String.trim()
+
+    %{
+      slug: if(slug == "", do: matrix_localpart, else: slug),
+      kind: :agent,
+      display_name:
+        params
+        |> Map.get("display_name", current_profile.display_name || "Agent #{matrix_localpart}")
+        |> to_string()
+        |> String.trim(),
+      matrix_localpart: matrix_localpart,
+      status:
+        case params |> Map.get("status", current_profile.status |> to_string()) |> to_string() do
+          "disabled" -> :disabled
+          _ -> :active
+        end,
+      metadata: metadata
+    }
+  end
+
+  defp sanitize_task_params(params) do
+    %{
+      "name" => params |> Map.get("name", "") |> to_string() |> String.trim(),
+      "enabled" => truthy?(Map.get(params, "enabled", "false")),
+      "task_type" =>
+        params |> Map.get("task_type", "run_agent_prompt") |> to_string() |> String.trim(),
+      "schedule_type" =>
+        params |> Map.get("schedule_type", "daily") |> to_string() |> String.trim(),
+      "schedule_interval" =>
+        params |> Map.get("schedule_interval", "1") |> to_string() |> String.trim(),
+      "schedule_hour" => params |> Map.get("schedule_hour", "") |> to_string() |> String.trim(),
+      "schedule_minute" =>
+        params |> Map.get("schedule_minute", "0") |> to_string() |> String.trim(),
+      "schedule_weekday" =>
+        params |> Map.get("schedule_weekday", "") |> to_string() |> String.trim(),
+      "timezone" =>
+        params |> Map.get("timezone", default_task_timezone()) |> to_string() |> String.trim(),
+      "room_id" => params |> Map.get("room_id", "") |> to_string() |> String.trim(),
+      "prompt_body" => params |> Map.get("prompt_body", "") |> to_string() |> String.trim(),
+      "message_body" => params |> Map.get("message_body", "") |> to_string() |> String.trim(),
+      "metadata" => %{"source" => "admin_ui"}
+    }
+  end
+
   defp normalize_provider(value) do
     value
     |> to_string()
@@ -764,11 +1278,27 @@ defmodule SentientwaveAutomataWeb.PageController do
   defp maybe_put_skill_filter(filters, _key, ""), do: filters
   defp maybe_put_skill_filter(filters, _key, nil), do: filters
   defp maybe_put_skill_filter(filters, key, value), do: Keyword.put(filters, key, value)
+  defp maybe_put_directory_filter(filters, _key, ""), do: filters
+  defp maybe_put_directory_filter(filters, _key, nil), do: filters
+  defp maybe_put_directory_filter(filters, key, value), do: Keyword.put(filters, key, value)
 
   defp maybe_put_skill_enabled_filter(filters, ""), do: filters
   defp maybe_put_skill_enabled_filter(filters, "true"), do: Keyword.put(filters, :enabled, true)
   defp maybe_put_skill_enabled_filter(filters, "false"), do: Keyword.put(filters, :enabled, false)
   defp maybe_put_skill_enabled_filter(filters, _), do: filters
+
+  defp maybe_put_directory_kind_filter(filters, ""), do: filters
+
+  defp maybe_put_directory_kind_filter(filters, "person"),
+    do: Keyword.put(filters, :kind, :person)
+
+  defp maybe_put_directory_kind_filter(filters, "human"), do: Keyword.put(filters, :kind, :person)
+  defp maybe_put_directory_kind_filter(filters, "agent"), do: Keyword.put(filters, :kind, :agent)
+
+  defp maybe_put_directory_kind_filter(filters, "service"),
+    do: Keyword.put(filters, :kind, :service)
+
+  defp maybe_put_directory_kind_filter(filters, _), do: filters
 
   defp normalize_tags(value) do
     value
@@ -799,5 +1329,155 @@ defmodule SentientwaveAutomataWeb.PageController do
       _ ->
         fallback
     end
+  end
+
+  defp directory_error_message(%Ecto.Changeset{} = changeset, fallback),
+    do: skill_error_message(changeset, fallback)
+
+  defp directory_error_message(%{} = errors, fallback) do
+    case Enum.at(Map.to_list(errors), 0) do
+      {field, message} -> "#{field} #{message}"
+      _ -> fallback
+    end
+  end
+
+  defp directory_error_message(reason, _fallback) when is_binary(reason), do: reason
+  defp directory_error_message(_reason, fallback), do: fallback
+
+  defp generated_password_message(result) do
+    password = Map.get(result, :generated_password)
+    localpart = result.user.localpart
+
+    if is_binary(password) and password != "" do
+      "Generated password for #{localpart}: #{password}"
+    else
+      "Credentials updated."
+    end
+  end
+
+  defp put_warning_flash(conn, []), do: conn
+
+  defp put_warning_flash(conn, warnings) when is_list(warnings) do
+    warnings =
+      warnings
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.reverse()
+
+    if warnings == [] do
+      conn
+    else
+      put_flash(conn, :error, Enum.join(warnings, " "))
+    end
+  end
+
+  defp maybe_sync_agent_directory_identity(user, profile_params) do
+    target_localpart =
+      profile_params
+      |> Map.get("matrix_localpart", user.localpart)
+      |> to_string()
+      |> String.trim()
+
+    display_name =
+      profile_params
+      |> Map.get("display_name", user.display_name)
+      |> to_string()
+      |> String.trim()
+
+    if target_localpart != "" and target_localpart != user.localpart do
+      DirectoryManager.update_user(user.localpart, %{
+        localpart: target_localpart,
+        kind: "agent",
+        display_name: display_name
+      })
+    else
+      {:ok, %{user: user, generated_password: nil, warnings: []}}
+    end
+  end
+
+  defp persist_tool_override(agent, tool_name, "allow") do
+    Agents.set_tool_permission(%{
+      agent_id: agent.id,
+      tool_name: tool_name,
+      scope: "default",
+      allowed: true,
+      constraints: %{"source" => "admin_ui"}
+    })
+    |> case do
+      {:ok, _permission} -> :ok
+      {:error, _reason} -> {:error, :persist_failed}
+    end
+  end
+
+  defp persist_tool_override(agent, tool_name, "block") do
+    Agents.set_tool_permission(%{
+      agent_id: agent.id,
+      tool_name: tool_name,
+      scope: "default",
+      allowed: false,
+      constraints: %{"source" => "admin_ui"}
+    })
+    |> case do
+      {:ok, _permission} -> :ok
+      {:error, _reason} -> {:error, :persist_failed}
+    end
+  end
+
+  defp persist_tool_override(agent, tool_name, "default") do
+    :ok = Agents.reset_tool_permission(agent.id, tool_name, "default")
+    :ok
+  end
+
+  defp agent_tool_rows(agent) do
+    permissions =
+      Agents.list_tool_permissions_for_agent(agent.id)
+      |> Map.new(fn permission -> {permission.tool_name, permission} end)
+
+    Settings.list_enabled_tool_configs()
+    |> Enum.map(fn config ->
+      permission = Map.get(permissions, config.tool_name)
+      privileged = config.tool_name in ["system_directory_admin", "run_shell"]
+
+      {effective_allowed, source_label} =
+        case permission do
+          %{allowed: true} -> {true, "Explicit Allow"}
+          %{allowed: false} -> {false, "Explicit Block"}
+          nil when privileged -> {false, "Default Block"}
+          nil -> {true, "Default Allow"}
+        end
+
+      %{
+        id: config.id,
+        tool_name: config.tool_name,
+        label: config.name,
+        effective_allowed: effective_allowed,
+        source_label: source_label
+      }
+    end)
+    |> Enum.sort_by(&{&1.label, &1.tool_name})
+  end
+
+  defp parse_metadata_json(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    cond do
+      trimmed == "" -> {:ok, %{}}
+      true -> Jason.decode(trimmed)
+    end
+  rescue
+    _ -> {:error, :invalid_metadata}
+  end
+
+  defp parse_metadata_json(value) when is_map(value), do: {:ok, value}
+  defp parse_metadata_json(_), do: {:ok, %{}}
+
+  defp fetch_directory_filter(filters, key) do
+    filters
+    |> Map.get(key, "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp default_task_timezone do
+    System.get_env("AUTOMATA_DEFAULT_TIMEZONE", "Etc/UTC")
   end
 end

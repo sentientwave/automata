@@ -1,0 +1,398 @@
+<.admin_shell
+  flash={@flash}
+  title={"Directory User: #{@user.localpart}"}
+  subtitle="Edit identity settings, manage Matrix credentials, and inspect agent runtime state when applicable."
+  status={@status}
+  admin_user={@admin_user}
+  nav={@nav}
+>
+  <section class="sw-card">
+    <div class="sw-inline-actions">
+      <a href={~p"/directory/users"} class="sw-btn sw-btn-ghost">Back to directory</a>
+      <a
+        :if={@user.kind == :agent}
+        href={~p"/directory/users/#{@user.localpart}/tasks/new"}
+        class="sw-btn sw-btn-primary"
+      >
+        Add Scheduled Task
+      </a>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <span class="sw-pill">MXID: @{@user.localpart}:{@status.homeserver_domain}</span>
+      <span class={["sw-pill", directory_kind_class(@user.kind)]}>
+        {directory_kind_label(@user.kind)}
+      </span>
+      <span
+        :if={@user.kind == :agent}
+        class={["sw-pill", operational_status_class(@operational_status)]}
+      >
+        {if @operational_status == :online, do: "Online", else: "Offline"}
+      </span>
+      <span class="sw-pill">
+        Password rotated: {Map.get(@user.metadata, "last_password_rotated_at", "not recorded")}
+      </span>
+    </div>
+  </section>
+
+  <section class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Directory Identity</h2>
+      <form
+        action={~p"/directory/users/#{@user.localpart}"}
+        method="post"
+        class="sw-form-grid mt-5"
+      >
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="user[admin]" value="false" />
+
+        <label class="sw-field">
+          <span>Localpart</span>
+          <input name="user[localpart]" class="sw-input" value={@user.localpart} />
+        </label>
+
+        <label class="sw-field">
+          <span>User Type</span>
+          <select name="user[kind]" class="sw-select">
+            <%= for {label, value} <- @directory_kind_options do %>
+              <option value={value} selected={to_string(@user.kind) == value}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Display Name</span>
+          <input name="user[display_name]" class="sw-input" value={@user.display_name} />
+        </label>
+
+        <label class="sw-checkbox-row">
+          <input type="checkbox" name="user[admin]" value="true" checked={@user.admin} />
+          <span>Grant Matrix admin role</span>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Save Directory User</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Matrix Account Summary</h2>
+
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Homeserver Identity</p>
+          <p class="sw-detail-value">@{@user.localpart}:{@status.homeserver_domain}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Admin Role</p>
+          <p class="sw-detail-value">{if @user.admin, do: "Granted", else: "Not granted"}</p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Password Strategy</p>
+          <p class="sw-detail-value">
+            {Map.get(@user.metadata, "password_strategy", "generated")}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Last Rotation</p>
+          <p class="sw-detail-value">
+            {Map.get(@user.metadata, "last_password_rotated_at", "not recorded")}
+          </p>
+        </div>
+      </div>
+
+      <div class="sw-actions mt-6">
+        <form action={~p"/directory/users/#{@user.localpart}/rotate-password"} method="post">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <button type="submit" class="sw-btn sw-btn-primary">Rotate Credentials</button>
+        </form>
+
+        <form action={~p"/directory/users/#{@user.localpart}"} method="post">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <input type="hidden" name="_method" value="delete" />
+          <button type="submit" class="sw-btn sw-btn-danger">Deactivate User</button>
+        </form>
+      </div>
+    </article>
+  </section>
+
+  <section :if={@user.kind == :agent} class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Agent Runtime Settings</h2>
+      <form
+        action={~p"/directory/users/#{@user.localpart}/agent-profile"}
+        method="post"
+        class="sw-form-grid mt-5"
+      >
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+        <label class="sw-field">
+          <span>Slug</span>
+          <input
+            name="agent_profile[slug]"
+            class="sw-input"
+            value={@agent_profile && @agent_profile.slug}
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>Runtime Status</span>
+          <select name="agent_profile[status]" class="sw-select">
+            <%= for {label, value} <- @agent_status_options do %>
+              <option
+                value={value}
+                selected={
+                  to_string((@agent_profile && @agent_profile.status) || :active) == value
+                }
+              >
+                {label}
+              </option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Agent Display Name</span>
+          <input
+            name="agent_profile[display_name]"
+            class="sw-input"
+            value={(@agent_profile && @agent_profile.display_name) || @user.display_name}
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Matrix Localpart</span>
+          <input
+            name="agent_profile[matrix_localpart]"
+            class="sw-input"
+            value={(@agent_profile && @agent_profile.matrix_localpart) || @user.localpart}
+          />
+        </label>
+
+        <label class="sw-field sw-field-span">
+          <span>Metadata JSON</span>
+          <textarea name="agent_profile[metadata]" class="sw-textarea" rows="10"><%= metadata_json(@agent_profile && @agent_profile.metadata || %{}) %></textarea>
+        </label>
+
+        <div class="sw-field-span sw-actions">
+          <button type="submit" class="sw-btn sw-btn-primary">Save Runtime Settings</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="sw-card">
+      <h2 class="sw-card-title">Operational Status</h2>
+      <div class="sw-detail-stack mt-5">
+        <div>
+          <p class="sw-section-label">Agent Runtime</p>
+          <p class="sw-detail-value">
+            {if @agent_profile, do: @agent_profile.status, else: "missing profile"}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Wallet Status</p>
+          <p class="sw-detail-value">
+            {if @agent_wallet, do: @agent_wallet.status, else: "missing wallet"}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Matrix Credentials</p>
+          <p class="sw-detail-value">
+            {if matrix_credentials_present?(@agent_wallet && @agent_wallet.matrix_credentials),
+              do: "Present",
+              else: "Missing"}
+          </p>
+        </div>
+
+        <div>
+          <p class="sw-section-label">Wallet Reference</p>
+          <p class="sw-detail-value">
+            {if @agent_wallet, do: @agent_wallet.wallet_ref, else: "not created"}
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section :if={@user.kind == :agent} class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Designated Tools</h2>
+        <p class="sw-card-copy">
+          Override tool access per agent, while keeping the default allow or block behavior visible.
+        </p>
+      </div>
+    </div>
+
+    <div :if={@tool_rows == []} class="sw-empty mt-5">
+      <h3>No configured tools</h3>
+      <p>Enable tools first to manage access overrides for this agent.</p>
+    </div>
+
+    <div :if={@tool_rows != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Effective Access</th>
+            <th>Source</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={row <- @tool_rows}>
+            <td>
+              <div class="sw-table-primary">{row.label}</div>
+              <div class="sw-table-secondary">{row.tool_name}</div>
+            </td>
+            <td>
+              <span class={["sw-pill", tool_state_class(row.effective_allowed)]}>
+                {tool_state_label(row)}
+              </span>
+            </td>
+            <td>{row.source_label}</td>
+            <td>
+              <div class="sw-table-actions">
+                <form
+                  action={~p"/directory/users/#{@user.localpart}/tool-permissions"}
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input type="hidden" name="tool_permission[tool_name]" value={row.tool_name} />
+                  <input type="hidden" name="tool_permission[action]" value="allow" />
+                  <button type="submit" class="sw-btn sw-btn-ghost sw-btn-small">Allow</button>
+                </form>
+
+                <form
+                  action={~p"/directory/users/#{@user.localpart}/tool-permissions"}
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input type="hidden" name="tool_permission[tool_name]" value={row.tool_name} />
+                  <input type="hidden" name="tool_permission[action]" value="block" />
+                  <button type="submit" class="sw-btn sw-btn-danger sw-btn-small">Block</button>
+                </form>
+
+                <form
+                  action={~p"/directory/users/#{@user.localpart}/tool-permissions"}
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input type="hidden" name="tool_permission[tool_name]" value={row.tool_name} />
+                  <input type="hidden" name="tool_permission[action]" value="default" />
+                  <button type="submit" class="sw-btn sw-btn-ghost sw-btn-small">
+                    Use Default
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section :if={@user.kind == :agent} class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Scheduled Tasks</h2>
+        <p class="sw-card-copy">
+          Admin-managed recurring work for this agent, including prompt runs and room messages.
+        </p>
+      </div>
+      <a href={~p"/directory/users/#{@user.localpart}/tasks/new"} class="sw-btn sw-btn-primary">
+        Add Task
+      </a>
+    </div>
+
+    <div :if={@scheduled_tasks == []} class="sw-empty mt-5">
+      <h3>No scheduled tasks yet</h3>
+      <p>Create one to have this agent act on an hourly, daily, or weekly cadence.</p>
+    </div>
+
+    <div :if={@scheduled_tasks != []} class="sw-table-wrap mt-5">
+      <table class="sw-data-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Schedule</th>
+            <th>Next Run</th>
+            <th>Last Outcome</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={task <- @scheduled_tasks}>
+            <td>
+              <div class="sw-table-primary">{task.name}</div>
+              <div class="sw-table-secondary">{scheduled_task_type_label(task.task_type)}</div>
+            </td>
+            <td>{scheduled_task_schedule_label(task)}</td>
+            <td>{format_timestamp(task.next_run_at)}</td>
+            <td>{last_outcome_label(task.last_outcome)}</td>
+            <td>
+              <div class="sw-table-actions">
+                <a
+                  href={~p"/directory/users/#{@user.localpart}/tasks/#{task.id}"}
+                  class="sw-btn sw-btn-ghost sw-btn-small"
+                >
+                  Open
+                </a>
+
+                <form
+                  action={~p"/directory/users/#{@user.localpart}/tasks/#{task.id}/toggle"}
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input
+                    type="hidden"
+                    name="enabled"
+                    value={if task.enabled, do: "false", else: "true"}
+                  />
+                  <button type="submit" class="sw-btn sw-btn-ghost sw-btn-small">
+                    {if task.enabled, do: "Disable", else: "Enable"}
+                  </button>
+                </form>
+
+                <form
+                  action={~p"/directory/users/#{@user.localpart}/tasks/#{task.id}"}
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="_csrf_token"
+                    value={Plug.CSRFProtection.get_csrf_token()}
+                  />
+                  <input type="hidden" name="_method" value="delete" />
+                  <button type="submit" class="sw-btn sw-btn-danger sw-btn-small">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</.admin_shell>
