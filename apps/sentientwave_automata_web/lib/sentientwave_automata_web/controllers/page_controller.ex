@@ -10,6 +10,7 @@ defmodule SentientwaveAutomataWeb.PageController do
   @provider_options [
     {"Local (Fallback)", "local"},
     {"OpenAI", "openai"},
+    {"Anthropic", "anthropic"},
     {"OpenRouter", "openrouter"},
     {"LM Studio", "lm-studio"},
     {"Ollama", "ollama"}
