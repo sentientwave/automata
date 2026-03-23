@@ -698,7 +698,7 @@ defmodule SentientwaveAutomataWeb.PageController do
     case Agents.get_llm_trace(id) do
       nil ->
         conn
-        |> put_flash(:error, "LLM trace not found.")
+        |> put_flash(:error, "Trace not found.")
         |> redirect(to: ~p"/observability/llm-traces")
 
       trace ->
@@ -721,12 +721,12 @@ defmodule SentientwaveAutomataWeb.PageController do
          ) do
       {:ok, _config} ->
         conn
-        |> put_flash(:info, "LLM provider added.")
+        |> put_flash(:info, "Provider added.")
         |> redirect(to: ~p"/settings/llm")
 
       {:error, _changeset} ->
         conn
-        |> put_flash(:error, "Could not add LLM provider.")
+        |> put_flash(:error, "Could not add provider.")
         |> redirect(to: ~p"/settings/llm")
     end
   end
@@ -754,12 +754,12 @@ defmodule SentientwaveAutomataWeb.PageController do
              ) do
           {:ok, _updated} ->
             conn
-            |> put_flash(:info, "LLM provider updated.")
+            |> put_flash(:info, "Provider updated.")
             |> redirect(to: ~p"/settings/llm/providers/#{config.id}")
 
           {:error, _changeset} ->
             conn
-            |> put_flash(:error, "Could not update LLM provider.")
+            |> put_flash(:error, "Could not update provider.")
             |> redirect(to: ~p"/settings/llm/providers/#{config.id}")
         end
     end
@@ -775,7 +775,7 @@ defmodule SentientwaveAutomataWeb.PageController do
     case Settings.set_default_llm_provider(id) do
       :ok ->
         conn
-        |> put_flash(:info, "Default LLM provider updated.")
+        |> put_flash(:info, "Default provider updated.")
         |> redirect(to: ~p"/settings/llm")
 
       {:error, _reason} ->
@@ -789,12 +789,12 @@ defmodule SentientwaveAutomataWeb.PageController do
     case Settings.delete_llm_provider(id) do
       :ok ->
         conn
-        |> put_flash(:info, "LLM provider removed.")
+        |> put_flash(:info, "Provider removed.")
         |> redirect(to: ~p"/settings/llm")
 
       {:error, :cannot_delete_last_provider} ->
         conn
-        |> put_flash(:error, "At least one LLM provider must remain configured.")
+        |> put_flash(:error, "At least one provider must remain configured.")
         |> redirect(to: ~p"/settings/llm")
 
       {:error, _reason} ->
@@ -1416,10 +1416,10 @@ defmodule SentientwaveAutomataWeb.PageController do
         active: active == "constitution"
       },
       %{id: "skills", label: "Skills", href: "/settings/skills", active: active == "skills"},
-      %{id: "llm", label: "LLM Providers", href: "/settings/llm", active: active == "llm"},
+      %{id: "llm", label: "Providers", href: "/settings/llm", active: active == "llm"},
       %{
         id: "llm_traces",
-        label: "LLM Traces",
+        label: "Traces",
         href: "/observability/llm-traces",
         active: active == "llm_traces"
       },

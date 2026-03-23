@@ -5,6 +5,8 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
   require Logger
 
   @membership_cache_key {:sentientwave_automata, :matrix_membership_reconcile}
+  @default_membership_backoff_cache_key {:sentientwave_automata,
+                                         :matrix_default_membership_backoff}
   @invite_poll_cache_key {:sentientwave_automata, :matrix_invite_poll}
 
   @spec reconcile_user(map(), keyword()) :: :ok | {:error, term()}
@@ -165,7 +167,8 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     skip_default = skip_default_membership_reconcile?(user)
 
     needs_default =
-      aliases != [] and not skip_default and not membership_recently_reconciled?(user.localpart)
+      aliases != [] and not skip_default and not membership_recently_reconciled?(user.localpart) and
+        default_membership_due?(user.localpart)
 
     needs_invite_poll = invite_poll_due?(user.localpart)
 
@@ -186,6 +189,10 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
         if needs_invite_poll, do: mark_invite_polled(user.localpart)
         :ok
       else
+        {:error, {:default_room_membership_rate_limited, _alias_full, body}} ->
+          backoff_default_membership(user.localpart, body)
+          :ok
+
         {:error, {:user_login_failed, 429, body}} ->
           # Synapse rate-limits login aggressively; avoid failing whole reconcile cycle.
           backoff_invite_poll(user.localpart, body)
@@ -206,7 +213,8 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     skip_default = skip_default_membership_reconcile?(user)
 
     needs_default =
-      aliases != [] and not skip_default and not membership_recently_reconciled?(user.localpart)
+      aliases != [] and not skip_default and not membership_recently_reconciled?(user.localpart) and
+        default_membership_due?(user.localpart)
 
     needs_invite_poll = invite_poll_due?(user.localpart)
 
@@ -228,6 +236,10 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
         if needs_invite_poll, do: mark_invite_polled(user.localpart)
         :ok
       else
+        {:error, {:default_room_membership_rate_limited, _alias_full, body}} ->
+          backoff_default_membership(user.localpart, body)
+          :ok
+
         {:error, {:user_login_failed, 429, body}} ->
           backoff_invite_poll(user.localpart, body)
           :ok
@@ -265,6 +277,12 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
 
       {:error, {:join_http_error, 404, _}} ->
         {:error, {:join_room_not_found, alias_full}}
+
+      {:error, {:invite_http_error, 429, body}} ->
+        {:error, {:default_room_membership_rate_limited, alias_full, body}}
+
+      {:error, {:join_http_error, 429, body}} ->
+        {:error, {:default_room_membership_rate_limited, alias_full, body}}
 
       {:error, reason} ->
         {:error, {:default_room_membership_failed, alias_full, reason}}
@@ -627,6 +645,29 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     |> String.to_integer()
   rescue
     _ -> 3_600_000
+  end
+
+  defp default_membership_due?(localpart) do
+    now = System.system_time(:millisecond)
+    cache = :persistent_term.get(@default_membership_backoff_cache_key, %{})
+    key = normalize_localpart(localpart)
+
+    case Map.get(cache, key) do
+      ts when is_integer(ts) -> now >= ts
+      _ -> true
+    end
+  end
+
+  defp backoff_default_membership(localpart, body) do
+    retry_ms = retry_after_ms(body)
+    set_next_default_membership_attempt(localpart, System.system_time(:millisecond) + retry_ms)
+    :ok
+  end
+
+  defp set_next_default_membership_attempt(localpart, next_at_ms) do
+    cache = :persistent_term.get(@default_membership_backoff_cache_key, %{})
+    key = normalize_localpart(localpart)
+    :persistent_term.put(@default_membership_backoff_cache_key, Map.put(cache, key, next_at_ms))
   end
 
   defp invite_poll_due?(localpart) do

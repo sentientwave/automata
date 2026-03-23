@@ -13,6 +13,20 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
   alias SentientwaveAutomata.Matrix.DirectoryUser
   require Logger
 
+  @non_retryable_errors [
+    :created_by_required,
+    :eligible_roles_required,
+    :ineligible_voter,
+    :law_required,
+    :missing_reference,
+    :missing_sender,
+    :not_authorized,
+    :not_found,
+    :not_open,
+    :proposal_closed,
+    :unknown_governance_actor
+  ]
+
   @impl true
   def execute(
         _context,
@@ -26,14 +40,23 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
       :ok = announce_proposal_opened(proposal, actor)
       [serialize_proposal(proposal)]
     else
-      raise "not authorized to open governance proposal"
+      fail_non_retryable(
+        "governance.proposal.not_authorized",
+        "not authorized to open governance proposal"
+      )
     end
   end
 
   def execute(_context, [%{"step" => "load_proposal", "proposal_id" => proposal_id}]) do
     case Governance.get_proposal(proposal_id) do
-      %LawProposal{} = proposal -> [serialize_proposal(proposal)]
-      nil -> raise "governance proposal not found: #{proposal_id}"
+      %LawProposal{} = proposal ->
+        [serialize_proposal(proposal)]
+
+      nil ->
+        fail_non_retryable(
+          "governance.proposal.not_found",
+          "governance proposal not found: #{proposal_id}"
+        )
     end
   end
 
@@ -67,7 +90,10 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
   end
 
   def execute(_context, [payload]) do
-    raise "unsupported governance proposal activity step: #{inspect(payload)}"
+    fail_non_retryable(
+      "governance.proposal.unsupported_step",
+      "unsupported governance proposal activity step: #{inspect(payload)}"
+    )
   end
 
   defp maybe_apply_approved_proposal(%LawProposal{status: :approved} = proposal) do
@@ -169,17 +195,25 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
   defp resolve_actor!(command) do
     sender_mxid = fetch_value(command, "sender_mxid")
 
-    with true <-
-           (is_binary(sender_mxid) and String.trim(sender_mxid) != "") ||
-             {:error, :missing_sender},
-         localpart <-
-           sender_mxid |> String.trim_leading("@") |> String.split(":", parts: 2) |> List.first(),
-         %DirectoryUser{} = actor <- Directory.get_user_record(localpart) do
-      actor
+    if is_binary(sender_mxid) and String.trim(sender_mxid) != "" do
+      localpart =
+        sender_mxid |> String.trim_leading("@") |> String.split(":", parts: 2) |> List.first()
+
+      case Directory.get_user_record(localpart) do
+        %DirectoryUser{} = actor ->
+          actor
+
+        nil ->
+          fail_non_retryable("governance.proposal.unknown_actor", "unknown governance actor")
+
+        {:error, reason} ->
+          raise "failed to resolve governance actor: #{inspect(reason)}"
+
+        _ ->
+          fail_non_retryable("governance.proposal.unknown_actor", "unknown governance actor")
+      end
     else
-      nil -> raise "unknown governance actor"
-      {:error, reason} -> raise "failed to resolve governance actor: #{inspect(reason)}"
-      _ -> raise "unknown governance actor"
+      fail_non_retryable("governance.proposal.missing_sender", "missing governance sender")
     end
   end
 
@@ -324,16 +358,30 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
 
   defp get_proposal!(proposal_id) do
     case Governance.get_proposal(proposal_id) do
-      %LawProposal{} = proposal -> proposal
-      nil -> raise "governance proposal not found: #{proposal_id}"
+      %LawProposal{} = proposal ->
+        proposal
+
+      nil ->
+        fail_non_retryable(
+          "governance.proposal.not_found",
+          "governance proposal not found: #{proposal_id}"
+        )
     end
   end
 
   defp unwrap_result!({:ok, result}, _action), do: result
+
+  defp unwrap_result!({:error, reason}, action) when reason in @non_retryable_errors do
+    fail_non_retryable("governance.proposal.#{reason}", "#{action} failed: #{inspect(reason)}")
+  end
 
   defp unwrap_result!({:error, reason}, action) do
     raise "#{action} failed: #{inspect(reason)}"
   end
 
   defp unwrap_result!(result, _action), do: result
+
+  defp fail_non_retryable(type, message) do
+    fail(message: message, type: type, non_retryable: true)
+  end
 end

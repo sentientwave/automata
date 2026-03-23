@@ -36,7 +36,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> init_test_session(automata_admin_authenticated: true)
       |> get(~p"/settings/llm")
 
-    assert html_response(conn, 200) =~ "LLM Provider Management"
+    assert html_response(conn, 200) =~ "Provider Management"
   end
 
   test "GET /settings/llm/providers/new includes Anthropic in provider options", %{conn: conn} do
@@ -46,7 +46,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> get(~p"/settings/llm/providers/new")
 
     body = html_response(conn, 200)
-    assert body =~ "Add LLM Provider"
+    assert body =~ "Add Provider"
     assert body =~ "Anthropic"
   end
 
@@ -57,7 +57,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> get(~p"/settings/llm/providers/new")
 
     body = html_response(conn, 200)
-    assert body =~ "Add LLM Provider"
+    assert body =~ "Add Provider"
     assert body =~ "Cerebras"
   end
 
@@ -327,7 +327,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> get(~p"/observability/llm-traces", %{"filters" => %{"q" => "hello"}})
 
     body = html_response(conn, 200)
-    assert body =~ "LLM Trace Explorer"
+    assert body =~ "Trace Explorer"
     assert body =~ "@mio:localhost"
   end
 
@@ -356,7 +356,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
       |> get(~p"/observability/llm-traces/#{trace.id}")
 
     body = html_response(conn, 200)
-    assert body =~ "LLM Trace Detail"
+    assert body =~ "Trace Detail"
     assert body =~ "missing_api_key"
     assert body =~ "gpt-4o-mini"
   end
