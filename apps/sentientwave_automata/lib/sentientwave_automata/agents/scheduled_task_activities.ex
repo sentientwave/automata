@@ -28,7 +28,10 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
   end
 
   def execute(_context, [payload]) do
-    raise "unsupported scheduled task activity step: #{inspect(payload)}"
+    fail_non_retryable(
+      "scheduled_task.unsupported_step",
+      "unsupported scheduled task activity step: #{inspect(payload)}"
+    )
   end
 
   defp execute_task(%ScheduledTask{} = task) do
@@ -133,6 +136,13 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
     end
   end
 
+  defp do_execute_task(%ScheduledTask{} = task) do
+    fail_non_retryable(
+      "scheduled_task.unsupported_task_type",
+      "unsupported scheduled task type: #{inspect(task.task_type)}"
+    )
+  end
+
   defp serialize_task(%ScheduledTask{} = task) do
     %{
       "state" => "present",
@@ -166,4 +176,8 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
   end
 
   defp unwrap_result!(result, _action), do: result
+
+  defp fail_non_retryable(type, message) do
+    fail(message: message, type: type, non_retryable: true)
+  end
 end
