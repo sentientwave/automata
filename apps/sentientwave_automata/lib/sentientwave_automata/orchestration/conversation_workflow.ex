@@ -34,7 +34,7 @@ defmodule SentientwaveAutomata.Orchestration.ConversationWorkflow do
       wait_all([
         start_activity(
           @activity,
-          [Map.put(payload, "step", step)],
+          [Temporal.activity_payload(step, payload)],
           task_queue: Temporal.activity_task_queue(),
           start_to_close_timeout: {5, :minute}
         )

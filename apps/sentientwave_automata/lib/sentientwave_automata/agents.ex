@@ -329,6 +329,8 @@ defmodule SentientwaveAutomata.Agents do
 
   @spec update_run(Run.t(), map()) :: {:ok, Run.t()} | {:error, Ecto.Changeset.t()}
   def update_run(%Run{} = run, attrs) do
+    attrs = normalize_run_update_attrs(attrs)
+
     run
     |> Run.changeset(attrs)
     |> Repo.update()
@@ -766,6 +768,28 @@ defmodule SentientwaveAutomata.Agents do
     |> maybe_put_key(:enabled, true)
     |> maybe_put_key(:metadata, %{})
   end
+
+  defp normalize_run_update_attrs(attrs) when is_map(attrs) do
+    attrs
+    |> Enum.reduce(%{}, fn {key, value}, acc ->
+      Map.put(acc, normalize_run_update_key(key), value)
+    end)
+  end
+
+  defp normalize_run_update_attrs(attrs), do: attrs
+
+  defp normalize_run_update_key(key) when key in [:agent_id, "agent_id"], do: :agent_id
+  defp normalize_run_update_key(key) when key in [:mention_id, "mention_id"], do: :mention_id
+  defp normalize_run_update_key(key) when key in [:workflow_id, "workflow_id"], do: :workflow_id
+
+  defp normalize_run_update_key(key) when key in [:temporal_run_id, "temporal_run_id"],
+    do: :temporal_run_id
+
+  defp normalize_run_update_key(key) when key in [:status, "status"], do: :status
+  defp normalize_run_update_key(key) when key in [:error, "error"], do: :error
+  defp normalize_run_update_key(key) when key in [:result, "result"], do: :result
+  defp normalize_run_update_key(key) when key in [:metadata, "metadata"], do: :metadata
+  defp normalize_run_update_key(key), do: key
 
   defp maybe_put_key(map, _key, nil), do: map
 
