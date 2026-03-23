@@ -39,6 +39,18 @@ Automata is built to provide that foundation.
 - Configure multiple LLM providers and tools
 - Keep all components running locally in one container for pilots and demos
 
+## Work Keeps Running
+
+Automata is built so important work does not disappear when a task takes time, a service restarts, or an external system has a temporary problem. Under the hood, Automata uses Temporal as its durable workflow engine, which means the system keeps track of progress step by step instead of depending on one live process staying healthy from beginning to end.
+
+At a high level, Automata uses Temporal for:
+- agent runs started from Matrix rooms and direct messages
+- scheduled tasks and recurring automations
+- company governance workflows such as law proposals and voting
+- deep research flows that gather and review evidence across multiple rounds
+
+This is part of what makes Automata feel more reliable in real use. It can retry the right step, recover cleanly after interruptions, and keep a visible history of what happened without turning every important request into a fragile one-shot script.
+
 ## Quick Start (Non-Engineer Friendly)
 
 The easiest path is the all-in-one container setup.
