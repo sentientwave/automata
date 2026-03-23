@@ -74,6 +74,7 @@ defmodule SentientwaveAutomata.Governance.ProposalWorkflow do
   defp signal_payload(_signal), do: %{}
 
   defp unwrap_activity_result([value]), do: value
+  defp unwrap_activity_result({:ok, [value]}), do: value
   defp unwrap_activity_result({:ok, value}), do: value
   defp unwrap_activity_result(value), do: value
 end

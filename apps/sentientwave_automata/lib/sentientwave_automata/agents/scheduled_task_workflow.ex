@@ -66,6 +66,7 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskWorkflow do
     unwrap_activity_result(result)
   end
 
+  defp unwrap_activity_result({:ok, [result]}), do: result
   defp unwrap_activity_result({:ok, result}), do: result
   defp unwrap_activity_result([result]), do: result
   defp unwrap_activity_result(result), do: result

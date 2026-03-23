@@ -258,14 +258,20 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
     normalized_payload = Temporal.stringify_keys(payload)
 
     if normalized_payload == payload do
-      raise "unsupported agent workflow activity step: #{inspect(payload)}"
+      fail_non_retryable(
+        "agent.workflow.unsupported_step",
+        "unsupported agent workflow activity step: #{inspect(payload)}"
+      )
     else
       execute(context, [normalized_payload])
     end
   end
 
   def execute(_context, [payload]) do
-    raise "unsupported agent workflow activity step: #{inspect(payload)}"
+    fail_non_retryable(
+      "agent.workflow.unsupported_step",
+      "unsupported agent workflow activity step: #{inspect(payload)}"
+    )
   end
 
   defp tool_client_opts(%Run{} = run, attrs, workflow_context) do
@@ -483,11 +489,11 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
   defp fetch_run!(run_id) when is_binary(run_id) do
     case Agents.get_run(run_id) do
       %Run{} = run -> run
-      nil -> raise "run not found: #{run_id}"
+      nil -> fail_non_retryable("agent.run.not_found", "run not found: #{run_id}")
     end
   end
 
-  defp fetch_run!(_run_id), do: raise("run not found")
+  defp fetch_run!(_run_id), do: fail_non_retryable("agent.run.not_found", "run not found")
 
   defp with_typing_lease(%Run{} = run, attrs, fun) when is_function(fun, 0) do
     room_id = fetch_value(attrs, "room_id", "")
@@ -578,6 +584,10 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
   end
 
   defp unwrap_result!(result, _action), do: result
+
+  defp fail_non_retryable(type, message) do
+    fail(message: message, type: type, non_retryable: true)
+  end
 
   defp fetch_map(map, key) do
     case fetch_value(map, key) do
