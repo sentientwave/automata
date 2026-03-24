@@ -1,6 +1,6 @@
 # SentientWave Automata
 
-[![Website](https://img.shields.io/badge/website-sentientwave.com-111827?style=flat-square&logo=safari&logoColor=white)](https://sentientwave.com) [![Version](https://img.shields.io/badge/version-v0.2.10--ce-0A7B83?style=flat-square)](https://github.com/sentientwave/automata/releases/tag/v0.2.10-ce)
+[![Website](https://img.shields.io/badge/website-sentientwave.com-111827?style=flat-square&logo=safari&logoColor=white)](https://sentientwave.com) [![Version](https://img.shields.io/badge/version-v0.2.11--ce-0A7B83?style=flat-square)](https://github.com/sentientwave/automata/releases/tag/v0.2.11-ce)
 
 Automata is a Matrix-native workspace and admin dashboard for teams that want people and AI assistants to handle real work together. Conversations happen in chat. Setup, control, and visibility happen in the web dashboard. Long-running work keeps going until it finishes.
 
