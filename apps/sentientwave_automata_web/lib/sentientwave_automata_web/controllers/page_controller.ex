@@ -529,16 +529,18 @@ defmodule SentientwaveAutomataWeb.PageController do
     render_llm(conn)
   end
 
-  def new_llm_provider(conn, _params) do
+  def new_llm_provider(conn, params) do
     status = Status.summary()
     effective = Settings.llm_provider_effective()
     providers = Settings.list_llm_provider_configs()
+    selected_provider = normalize_provider(Map.get(params, "provider", "local"))
 
     render(conn, :new_llm_provider,
       status: status,
       admin_user: AdminAuth.expected_username(),
       nav: nav("llm"),
       provider_options: @provider_options,
+      selected_provider: selected_provider,
       llm: effective,
       providers: providers,
       token_configured?: token_configured?(effective.api_token),

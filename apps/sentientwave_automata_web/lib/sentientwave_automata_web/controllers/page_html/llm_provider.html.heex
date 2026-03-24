@@ -1,7 +1,7 @@
 <.admin_shell
   flash={@flash}
   title={"Edit Provider: #{@provider.name}"}
-  subtitle="Adjust model routing, timeout, endpoint, and credentials on a dedicated page."
+  subtitle="Adjust model routing, timeout, endpoint, and credentials with provider-aware setup guidance."
   status={@status}
   admin_user={@admin_user}
   nav={@nav}
@@ -23,7 +23,7 @@
     </div>
 
     <div class="sw-pill-list mt-4">
-      <span class="sw-pill">Provider: {@provider.provider}</span>
+      <span class="sw-pill">Provider: {llm_provider_label(@provider.provider)}</span>
       <span class="sw-pill">Model: {@provider.model}</span>
       <span class="sw-pill">Timeout: {@provider.timeout_seconds || 600}s</span>
       <span class={["sw-pill", @provider.is_default && "is-ok"]}>
@@ -35,12 +35,17 @@
     </div>
   </section>
 
+  <.provider_setup_panel provider={@provider.provider} />
+
   <section class="sw-card">
     <h2 class="sw-card-title">Provider Configuration</h2>
     <form
+      id="provider-form-edit"
       action={~p"/settings/llm/providers/#{@provider.id}"}
       method="post"
       class="sw-form-grid mt-5"
+      data-provider-form
+      data-provider-mode="edit"
     >
       <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
 
@@ -56,21 +61,34 @@
 
       <label class="sw-field">
         <span>Provider</span>
-        <select name="llm[provider]" class="sw-select">
+        <select
+          id="llm-provider-select-edit"
+          name="llm[provider]"
+          class="sw-select"
+          data-provider-select
+        >
           <%= for {label, value} <- @provider_options do %>
             <option value={value} selected={@provider.provider == value}>{label}</option>
           <% end %>
         </select>
+        <p class="sw-field-help">
+          Changing provider does not replace your model or endpoint automatically. Review the setup panel above if you switch.
+        </p>
       </label>
 
       <label class="sw-field">
         <span>Model</span>
         <input
+          id="llm-model-edit"
           name="llm[model]"
           class="sw-input"
           value={@provider.model}
           placeholder="gemini-2.5-flash / gpt-oss-120b / claude-3-5-haiku-latest / gpt-4o-mini / llama3.1"
+          data-provider-model-input
         />
+        <p class="sw-field-help" data-provider-model-copy>
+          Update the model explicitly if you want to follow another provider preset.
+        </p>
       </label>
 
       <label class="sw-field">
@@ -88,16 +106,30 @@
       <label class="sw-field sw-field-span">
         <span>Base URL (optional)</span>
         <input
+          id="llm-base-url-edit"
           name="llm[base_url]"
           class="sw-input"
           value={@provider.base_url}
           placeholder="https://generativelanguage.googleapis.com/v1beta or https://api.cerebras.ai/v1"
+          data-provider-base-url-input
         />
+        <p class="sw-field-help" data-provider-base-url-copy>
+          Leave blank to use the selected provider default endpoint.
+        </p>
       </label>
 
       <label class="sw-field sw-field-span">
-        <span>API Token (leave blank to keep existing)</span>
-        <input name="llm[api_token]" type="password" class="sw-input" value="" />
+        <span data-provider-token-label>API Token (leave blank to keep existing)</span>
+        <input
+          name="llm[api_token]"
+          type="password"
+          class="sw-input"
+          value=""
+          data-provider-token-input
+        />
+        <p class="sw-field-help" data-provider-token-copy>
+          Save a new provider credential here, or leave it blank to keep the existing secret.
+        </p>
       </label>
 
       <label class="sw-checkbox-row">

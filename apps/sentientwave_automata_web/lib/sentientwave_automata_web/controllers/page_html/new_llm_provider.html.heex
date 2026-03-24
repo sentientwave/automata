@@ -1,7 +1,7 @@
 <.admin_shell
   flash={@flash}
   title="Add Provider"
-  subtitle="Create a new provider on a dedicated page, then return to the provider table."
+  subtitle="Create a new provider with provider-aware defaults, endpoint guidance, and credential hints."
   status={@status}
   admin_user={@admin_user}
   nav={@nav}
@@ -13,8 +13,55 @@
   </section>
 
   <section class="sw-card">
+    <div class="sw-section-header">
+      <div>
+        <h2 class="sw-card-title">Quick Presets</h2>
+        <p class="sw-card-copy">
+          Jump into a provider preset to load the right setup guidance before you save.
+        </p>
+      </div>
+    </div>
+
+    <div class="sw-pill-list mt-4">
+      <a href={~p"/settings/llm/providers/new?provider=local"} class="sw-btn sw-btn-ghost">
+        Local
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=openai"} class="sw-btn sw-btn-ghost">
+        OpenAI
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=gemini"} class="sw-btn sw-btn-ghost">
+        Google Gemini
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=anthropic"} class="sw-btn sw-btn-ghost">
+        Anthropic
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=cerebras"} class="sw-btn sw-btn-ghost">
+        Cerebras
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=openrouter"} class="sw-btn sw-btn-ghost">
+        OpenRouter
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=lm-studio"} class="sw-btn sw-btn-ghost">
+        LM Studio
+      </a>
+      <a href={~p"/settings/llm/providers/new?provider=ollama"} class="sw-btn sw-btn-ghost">
+        Ollama
+      </a>
+    </div>
+  </section>
+
+  <.provider_setup_panel provider={@selected_provider} />
+
+  <section class="sw-card">
     <h2 class="sw-card-title">New Provider</h2>
-    <form action={~p"/settings/llm/providers"} method="post" class="sw-form-grid mt-5">
+    <form
+      id="provider-form-new"
+      action={~p"/settings/llm/providers"}
+      method="post"
+      class="sw-form-grid mt-5"
+      data-provider-form
+      data-provider-mode="new"
+    >
       <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
 
       <label class="sw-field">
@@ -29,20 +76,33 @@
 
       <label class="sw-field">
         <span>Provider</span>
-        <select name="llm[provider]" class="sw-select">
+        <select
+          id="llm-provider-select-new"
+          name="llm[provider]"
+          class="sw-select"
+          data-provider-select
+        >
           <%= for {label, value} <- @provider_options do %>
-            <option value={value}>{label}</option>
+            <option value={value} selected={@selected_provider == value}>{label}</option>
           <% end %>
         </select>
+        <p class="sw-field-help">
+          Choose a hosted or local provider, then review the setup panel above before saving.
+        </p>
       </label>
 
       <label class="sw-field">
         <span>Model</span>
         <input
+          id="llm-model-new"
           name="llm[model]"
           class="sw-input"
           placeholder="gemini-2.5-flash / gpt-oss-120b / claude-3-5-haiku-latest / gpt-4o-mini / llama3.1"
+          data-provider-model-input
         />
+        <p class="sw-field-help" data-provider-model-copy>
+          Leave blank to use the selected provider default model.
+        </p>
       </label>
 
       <label class="sw-field">
@@ -60,15 +120,23 @@
       <label class="sw-field sw-field-span">
         <span>Base URL (optional)</span>
         <input
+          id="llm-base-url-new"
           name="llm[base_url]"
           class="sw-input"
           placeholder="https://generativelanguage.googleapis.com/v1beta or https://api.cerebras.ai/v1"
+          data-provider-base-url-input
         />
+        <p class="sw-field-help" data-provider-base-url-copy>
+          Leave blank to use the selected provider default endpoint.
+        </p>
       </label>
 
       <label class="sw-field sw-field-span">
-        <span>API Token (optional)</span>
-        <input name="llm[api_token]" type="password" class="sw-input" />
+        <span data-provider-token-label>API Token (optional)</span>
+        <input name="llm[api_token]" type="password" class="sw-input" data-provider-token-input />
+        <p class="sw-field-help" data-provider-token-copy>
+          Save a provider credential here, or rely on your runtime environment if you prefer.
+        </p>
       </label>
 
       <label class="sw-checkbox-row">

@@ -393,6 +393,14 @@
   gap: 0.9rem;
 }
 
+.sw-provider-guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
 .sw-action-card {
   display: block;
   padding: 1rem 1.1rem;
@@ -599,6 +607,13 @@
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--sw-muted);
+}
+
+.sw-field-help {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
   color: var(--sw-muted);
 }
 

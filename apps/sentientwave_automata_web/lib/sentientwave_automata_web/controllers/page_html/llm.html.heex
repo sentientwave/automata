@@ -10,7 +10,7 @@
     <h2 class="sw-card-title">Effective Runtime Provider</h2>
     <div class="sw-pill-list mt-4">
       <span class="sw-pill">Name: {@llm.name}</span>
-      <span class="sw-pill">Provider: {@llm.provider}</span>
+      <span class="sw-pill">Provider: {llm_provider_label(@llm.provider)}</span>
       <span class="sw-pill">Model: {@llm.model}</span>
       <span class="sw-pill">Timeout: {@llm.timeout_seconds}s</span>
       <span class="sw-pill">
@@ -50,7 +50,7 @@
               <div class="sw-table-primary">{provider.name}</div>
               <div class="sw-table-secondary">{provider.slug}</div>
             </td>
-            <td>{provider.provider}</td>
+            <td>{llm_provider_label(provider.provider)}</td>
             <td><code>{provider.model}</code></td>
             <td>{provider.timeout_seconds || 600}s</td>
             <td class="sw-table-endpoint">

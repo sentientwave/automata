@@ -61,6 +61,23 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
     assert body =~ "Google Gemini"
   end
 
+  test "GET /settings/llm/providers/new with Gemini preset shows Gemini setup guidance", %{
+    conn: conn
+  } do
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/settings/llm/providers/new?provider=gemini")
+
+    body = html_response(conn, 200)
+    assert body =~ "Quick Presets"
+    assert body =~ "Google Gemini"
+    assert body =~ "Gemini generateContent API"
+    assert body =~ "gemini-2.5-flash"
+    assert body =~ "x-goog-api-key"
+    assert body =~ "generativelanguage.googleapis.com/v1beta"
+  end
+
   test "GET /settings/llm/providers/new includes Cerebras in provider options", %{conn: conn} do
     conn =
       conn
@@ -70,6 +87,57 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
     body = html_response(conn, 200)
     assert body =~ "Add Provider"
     assert body =~ "Cerebras"
+  end
+
+  test "GET /settings/llm renders humanized Gemini provider labels", %{conn: conn} do
+    assert {:ok, _provider} =
+             Settings.create_llm_provider_config(%{
+               "name" => "Gemini Primary",
+               "slug" => "gemini-primary-ui-test",
+               "provider" => "gemini",
+               "model" => "gemini-2.5-flash",
+               "base_url" => "https://generativelanguage.googleapis.com/v1beta",
+               "api_token" => "gemini-ui-test-key",
+               "enabled" => true,
+               "is_default" => true
+             })
+
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/settings/llm")
+
+    body = html_response(conn, 200)
+    assert body =~ "Gemini Primary"
+    assert body =~ "Google Gemini"
+  end
+
+  test "GET /settings/llm/providers/:id shows Gemini setup guidance for a persisted provider", %{
+    conn: conn
+  } do
+    assert {:ok, provider} =
+             Settings.create_llm_provider_config(%{
+               "name" => "Gemini Detail",
+               "slug" => "gemini-detail-ui-test",
+               "provider" => "gemini",
+               "model" => "gemini-2.5-flash",
+               "base_url" => "https://generativelanguage.googleapis.com/v1beta",
+               "api_token" => "gemini-detail-key",
+               "enabled" => true,
+               "is_default" => false
+             })
+
+    conn =
+      conn
+      |> init_test_session(automata_admin_authenticated: true)
+      |> get(~p"/settings/llm/providers/#{provider.id}")
+
+    body = html_response(conn, 200)
+    assert body =~ "Edit Provider: Gemini Detail"
+    assert body =~ "Google Gemini"
+    assert body =~ "Gemini generateContent API"
+    assert body =~ "x-goog-api-key"
+    assert body =~ "gemini-2.5-flash"
   end
 
   test "GET /settings/skills renders skill catalog when authenticated", %{conn: conn} do
