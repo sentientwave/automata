@@ -7,7 +7,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.OpenAI do
 
   @impl true
   def complete(messages, opts \\ []) when is_list(messages) do
-    model = Keyword.get(opts, :model, System.get_env("AUTOMATA_LLM_MODEL", "gpt-4o-mini"))
+    model = Keyword.get(opts, :model, System.get_env("AUTOMATA_LLM_MODEL", "gpt-5.4"))
 
     base_url =
       Keyword.get(

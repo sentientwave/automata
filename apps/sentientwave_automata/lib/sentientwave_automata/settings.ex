@@ -10,6 +10,19 @@ defmodule SentientwaveAutomata.Settings do
   alias SentientwaveAutomata.Settings.ToolConfig
 
   @singleton_key "default"
+  @llm_provider_defaults %{
+    "local" => %{model: "local-default", base_url: ""},
+    "openai" => %{model: "gpt-5.4", base_url: "https://api.openai.com/v1"},
+    "gemini" => %{
+      model: "gemini-3.1-pro-preview",
+      base_url: "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "anthropic" => %{model: "claude-sonnet-4-6", base_url: "https://api.anthropic.com"},
+    "cerebras" => %{model: "gpt-oss-120b", base_url: "https://api.cerebras.ai/v1"},
+    "openrouter" => %{model: "openrouter/auto", base_url: "https://openrouter.ai/api/v1"},
+    "lm-studio" => %{model: "local-model", base_url: "http://host.containers.internal:1234/v1"},
+    "ollama" => %{model: "llama3.1", base_url: "http://host.containers.internal:11434"}
+  }
 
   @spec list_llm_provider_configs() :: [LLMProviderConfig.t()]
   def list_llm_provider_configs do
@@ -39,14 +52,22 @@ defmodule SentientwaveAutomata.Settings do
   @spec llm_provider_effective() :: map()
   def llm_provider_effective do
     config = get_default_llm_provider_config()
+    env_provider = System.get_env("AUTOMATA_LLM_PROVIDER", "local")
+    provider = config_value(config, :provider, env_provider)
+    defaults = llm_provider_defaults(provider)
 
     %{
       id: config_field(config, :id),
       name: config_value(config, :name, "Environment"),
       slug: config_value(config, :slug, "environment"),
-      provider: config_value(config, :provider, System.get_env("AUTOMATA_LLM_PROVIDER", "local")),
-      model: config_value(config, :model, System.get_env("AUTOMATA_LLM_MODEL", "local-default")),
-      base_url: config_value(config, :base_url, System.get_env("AUTOMATA_LLM_API_BASE", "")),
+      provider: provider,
+      model: config_value(config, :model, System.get_env("AUTOMATA_LLM_MODEL", defaults.model)),
+      base_url:
+        config_value(
+          config,
+          :base_url,
+          System.get_env("AUTOMATA_LLM_API_BASE", defaults.base_url)
+        ),
       api_token: config_value(config, :api_token, System.get_env("AUTOMATA_LLM_API_KEY", "")),
       timeout_seconds: config_int_value(config, :timeout_seconds, default_llm_timeout_seconds()),
       configured_in_db: is_struct(config, LLMProviderConfig)
@@ -173,13 +194,16 @@ defmodule SentientwaveAutomata.Settings do
   @spec ensure_default_provider_from_env() :: :ok
   def ensure_default_provider_from_env do
     if list_llm_provider_configs() == [] do
+      env_provider = System.get_env("AUTOMATA_LLM_PROVIDER", "local")
+      defaults = llm_provider_defaults(env_provider)
+
       _ =
         create_llm_provider_config(%{
           "name" => "Primary",
           "slug" => "primary",
-          "provider" => System.get_env("AUTOMATA_LLM_PROVIDER", "local"),
-          "model" => System.get_env("AUTOMATA_LLM_MODEL", "local-default"),
-          "base_url" => System.get_env("AUTOMATA_LLM_API_BASE", ""),
+          "provider" => env_provider,
+          "model" => System.get_env("AUTOMATA_LLM_MODEL", defaults.model),
+          "base_url" => System.get_env("AUTOMATA_LLM_API_BASE", defaults.base_url),
           "api_token" => System.get_env("AUTOMATA_LLM_API_KEY", ""),
           "timeout_seconds" => default_llm_timeout_seconds(),
           "enabled" => true,
@@ -319,6 +343,13 @@ defmodule SentientwaveAutomata.Settings do
   defp unwrap_transaction({:error, reason}), do: {:error, reason}
 
   defp normalize_provider_attrs(attrs) do
+    provider =
+      attrs
+      |> Map.get("provider", "local")
+      |> normalize_provider()
+
+    defaults = llm_provider_defaults(provider)
+
     attrs
     |> Map.take([
       "name",
@@ -333,14 +364,24 @@ defmodule SentientwaveAutomata.Settings do
     ])
     |> Map.update("name", "Primary", &String.trim(to_string(&1)))
     |> Map.update("slug", "", &String.trim(to_string(&1)))
-    |> Map.update("provider", "local", &normalize_provider/1)
-    |> Map.update("model", "local-default", &String.trim(to_string(&1)))
-    |> Map.update("base_url", "", &String.trim(to_string(&1)))
+    |> Map.put("provider", provider)
+    |> Map.update("model", defaults.model, &default_provider_field(&1, defaults.model))
+    |> Map.update("base_url", defaults.base_url, &default_provider_field(&1, defaults.base_url))
     |> Map.update("api_token", "", &String.trim(to_string(&1)))
     |> Map.update("enabled", true, &truthy?/1)
     |> Map.update("is_default", false, &truthy?/1)
     |> Map.update("timeout_seconds", default_llm_timeout_seconds(), &normalize_timeout_seconds/1)
     |> ensure_default_slug()
+  end
+
+  @spec llm_provider_defaults(String.t() | atom() | nil) :: %{
+          model: String.t(),
+          base_url: String.t()
+        }
+  def llm_provider_defaults(provider) do
+    provider
+    |> normalize_provider()
+    |> then(&Map.get(@llm_provider_defaults, &1, @llm_provider_defaults["local"]))
   end
 
   defp ensure_default_slug(attrs) do
@@ -424,6 +465,13 @@ defmodule SentientwaveAutomata.Settings do
     |> to_string()
     |> String.trim()
     |> String.downcase()
+  end
+
+  defp default_provider_field(value, fallback) do
+    case value |> to_string() |> String.trim() do
+      "" -> fallback
+      trimmed -> trimmed
+    end
   end
 
   defp normalize_tool_name(value) do

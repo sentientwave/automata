@@ -256,6 +256,9 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
   defp provider_module("anthropic"),
     do: {:ok, SentientwaveAutomata.Agents.LLM.Providers.Anthropic}
 
+  defp provider_module("gemini"),
+    do: {:ok, SentientwaveAutomata.Agents.LLM.Providers.Gemini}
+
   defp provider_module("cerebras"),
     do: {:ok, SentientwaveAutomata.Agents.LLM.Providers.Cerebras}
 
@@ -339,13 +342,13 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
     provider_opts =
       [
         model: model,
-        base_url: effective.base_url,
-        api_key: effective.api_token,
         timeout_seconds: timeout_seconds,
         agent_id: agent_id,
         user_input: user_input,
         room_id: Keyword.get(opts, :room_id)
       ]
+      |> maybe_put_provider_opt(:base_url, effective.base_url)
+      |> maybe_put_provider_opt(:api_key, effective.api_token)
       |> Keyword.put(:trace_context, trace_context)
       |> Keyword.put(:provider, provider)
       |> Keyword.put(:provider_config_id, effective.id)
@@ -392,6 +395,17 @@ defmodule SentientwaveAutomata.Agents.LLM.Client do
       )
     end)
   end
+
+  defp maybe_put_provider_opt(opts, _key, value) when value in [nil, ""], do: opts
+
+  defp maybe_put_provider_opt(opts, key, value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> opts
+      trimmed -> Keyword.put(opts, key, trimmed)
+    end
+  end
+
+  defp maybe_put_provider_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp tool_planner_message(available_tools) do
     %{

@@ -5,7 +5,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.Anthropic do
 
   alias SentientwaveAutomata.Agents.LLM.HTTP
 
-  @default_model "claude-3-5-haiku-latest"
+  @default_model "claude-sonnet-4-6"
   @default_base_url "https://api.anthropic.com"
   @default_version "2023-06-01"
   @default_max_tokens 1024

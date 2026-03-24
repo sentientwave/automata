@@ -47,8 +47,8 @@ Security-related env vars (in `deploy/all-in-one/.env`):
 - `AUTOMATA_EMBEDDING_MODEL` (embedding model id used by provider)
 - `AUTOMATA_EMBEDDING_API_BASE` (optional API base URL for embedding provider)
 - `AUTOMATA_EMBEDDING_API_KEY` (optional API key for embedding provider)
-- `AUTOMATA_LLM_PROVIDER` (`local`, `openai`, `openrouter`, `lm-studio`, `ollama`)
-- `AUTOMATA_LLM_MODEL` (provider model id, for example `gpt-4o-mini`, `openai/gpt-4o-mini`, `llama3.1`)
+- `AUTOMATA_LLM_PROVIDER` (`local`, `openai`, `gemini`, `openrouter`, `lm-studio`, `ollama`)
+- `AUTOMATA_LLM_MODEL` (provider model id, for example `gpt-5.4`, `gemini-3.1-pro-preview`, `openrouter/auto`, `gpt-oss:20b`)
 - `AUTOMATA_LLM_API_BASE` (optional provider base URL override)
 - `AUTOMATA_LLM_API_KEY` (provider API key when required)
 - `AUTOMATA_TEMPORAL_TASK_QUEUE` (Temporal task queue name for agent durable workflows)
@@ -103,7 +103,7 @@ Web auth flow:
 - Admin credentials default to `AUTOMATA_WEB_ADMIN_USER` / `AUTOMATA_WEB_ADMIN_PASSWORD`.
 - If not explicitly set, those default to Matrix admin credentials from env.
 - Most user interaction with Automata is expected in Matrix rooms.
-- Agent inference is abstracted via `AUTOMATA_LLM_PROVIDER` and currently supports OpenAI, OpenRouter, LM Studio, and Ollama.
+- Agent inference is abstracted via `AUTOMATA_LLM_PROVIDER` and currently supports OpenAI, Google Gemini, OpenRouter, LM Studio, and Ollama.
 - Admin UI supports configuring multiple LLM providers and selecting a default at runtime (`/settings/llm`).
 - Element Web defaults to `ELEMENT_DEFAULT_HOMESERVER_URL` and is reachable in LAN when `AIO_BIND_HOST=0.0.0.0`.
 - Temporal runs in local dev mode for single-container simplicity; production should use dedicated Temporal cluster deployment.

@@ -1,17 +1,17 @@
-defmodule SentientwaveAutomata.Agents.LLM.Providers.AnthropicTest do
+defmodule SentientwaveAutomata.Agents.LLM.Providers.GeminiTest do
   use ExUnit.Case, async: true
 
-  alias SentientwaveAutomata.Agents.LLM.Providers.Anthropic
+  alias SentientwaveAutomata.Agents.LLM.Providers.Gemini
 
-  test "returns missing_api_key when the Anthropic token is missing" do
+  test "returns missing_api_key when the Gemini token is missing" do
     assert {:error, :missing_api_key} =
-             Anthropic.complete(
-               [%{"role" => "user", "content" => "Hello Claude"}],
+             Gemini.complete(
+               [%{"role" => "user", "content" => "Hello Gemini"}],
                api_key: ""
              )
   end
 
-  test "translates messages into Anthropic format and extracts text content" do
+  test "translates messages into Gemini format and extracts text content" do
     test_pid = self()
 
     {base_url, _server_pid} =
@@ -19,18 +19,21 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.AnthropicTest do
         %{
           status: 200,
           body: %{
-            "id" => "msg_test",
-            "type" => "message",
-            "role" => "assistant",
-            "content" => [
-              %{"type" => "text", "text" => "Hello from Claude"}
+            "candidates" => [
+              %{
+                "content" => %{
+                  "parts" => [
+                    %{"text" => "Hello from Gemini"}
+                  ]
+                }
+              }
             ]
           }
         }
       end)
 
-    assert {:ok, "Hello from Claude"} =
-             Anthropic.complete(
+    assert {:ok, "Hello from Gemini"} =
+             Gemini.complete(
                [
                  %{"role" => "system", "content" => "Core system instruction."},
                  %{"role" => "system", "content" => "Skill instruction."},
@@ -38,67 +41,105 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.AnthropicTest do
                  %{"role" => "assistant", "content" => "Assistant context"},
                  %{"role" => "user", "content" => "Second user turn"}
                ],
-               api_key: "sk-ant-test",
+               api_key: "gemini_test_key",
                base_url: base_url,
-               model: "claude-sonnet-4-6",
+               model: "gemini-3.1-pro-preview",
                max_tokens: 512,
                timeout_seconds: 5
              )
 
-    assert_receive {:anthropic_request, request}, 5_000
+    assert_receive {:gemini_request, request}, 5_000
 
     {headers, body} = split_request(request)
     payload = Jason.decode!(body)
 
-    assert headers =~ "POST /v1/messages HTTP/1.1"
-    assert String.downcase(headers) =~ "x-api-key: sk-ant-test"
-    assert String.downcase(headers) =~ "anthropic-version: 2023-06-01"
-    assert payload["model"] == "claude-sonnet-4-6"
-    assert payload["max_tokens"] == 512
-    assert payload["system"] == "Core system instruction.\n\nSkill instruction."
+    assert headers =~ "POST /v1beta/models/gemini-3.1-pro-preview:generateContent HTTP/1.1"
+    assert String.downcase(headers) =~ "x-goog-api-key: gemini_test_key"
 
-    assert payload["messages"] == [
-             %{"role" => "user", "content" => "First user turn"},
-             %{"role" => "assistant", "content" => "Assistant context"},
-             %{"role" => "user", "content" => "Second user turn"}
+    assert payload["system_instruction"] == %{
+             "parts" => [%{"text" => "Core system instruction.\n\nSkill instruction."}]
+           }
+
+    assert payload["generationConfig"] == %{
+             "temperature" => 0.2,
+             "maxOutputTokens" => 512
+           }
+
+    assert payload["contents"] == [
+             %{"role" => "user", "parts" => [%{"text" => "First user turn"}]},
+             %{"role" => "model", "parts" => [%{"text" => "Assistant context"}]},
+             %{"role" => "user", "parts" => [%{"text" => "Second user turn"}]}
            ]
   end
 
-  test "returns structured http errors from Anthropic" do
+  test "returns structured http errors from Gemini" do
     test_pid = self()
 
     {base_url, _server_pid} =
       start_stub_server(test_pid, fn _request ->
         %{
-          status: 401,
+          status: 400,
           body: %{
-            "type" => "error",
             "error" => %{
-              "type" => "authentication_error",
-              "message" => "invalid x-api-key"
+              "code" => 400,
+              "message" => "API key not valid. Please pass a valid API key.",
+              "status" => "INVALID_ARGUMENT"
             }
           }
         }
       end)
 
     assert {:error,
-            {:http_error, 401,
+            {:http_error, 400,
              %{
-               "type" => "error",
                "error" => %{
-                 "type" => "authentication_error",
-                 "message" => "invalid x-api-key"
+                 "code" => 400,
+                 "message" => "API key not valid. Please pass a valid API key.",
+                 "status" => "INVALID_ARGUMENT"
                }
              }}} =
-             Anthropic.complete(
-               [%{"role" => "user", "content" => "Hello Claude"}],
-               api_key: "sk-ant-test",
+             Gemini.complete(
+               [%{"role" => "user", "content" => "Hello Gemini"}],
+               api_key: "gemini_test_key",
                base_url: base_url,
-               model: "claude-sonnet-4-6",
+               model: "gemini-3.1-pro-preview",
                timeout_seconds: 5
              )
 
-    assert_receive {:anthropic_request, _request}, 5_000
+    assert_receive {:gemini_request, _request}, 5_000
+  end
+
+  test "returns blocked_prompt when Gemini rejects the prompt" do
+    test_pid = self()
+
+    {base_url, _server_pid} =
+      start_stub_server(test_pid, fn _request ->
+        %{
+          status: 200,
+          body: %{
+            "promptFeedback" => %{
+              "blockReason" => "SAFETY"
+            }
+          }
+        }
+      end)
+
+    assert {:error,
+            {:blocked_prompt,
+             %{
+               "promptFeedback" => %{
+                 "blockReason" => "SAFETY"
+               }
+             }}} =
+             Gemini.complete(
+               [%{"role" => "user", "content" => "Hello Gemini"}],
+               api_key: "gemini_test_key",
+               base_url: base_url,
+               model: "gemini-3.1-pro-preview",
+               timeout_seconds: 5
+             )
+
+    assert_receive {:gemini_request, _request}, 5_000
   end
 
   defp start_stub_server(test_pid, responder) do
@@ -121,7 +162,7 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.AnthropicTest do
   defp serve_once(listen_socket, test_pid, responder) do
     {:ok, socket} = :gen_tcp.accept(listen_socket)
     {:ok, request} = read_request(socket, "")
-    send(test_pid, {:anthropic_request, request})
+    send(test_pid, {:gemini_request, request})
 
     %{status: status, body: body} = responder.(request)
     response_body = Jason.encode!(body)
@@ -199,6 +240,6 @@ defmodule SentientwaveAutomata.Agents.LLM.Providers.AnthropicTest do
   end
 
   defp reason_phrase(200), do: "OK"
-  defp reason_phrase(401), do: "Unauthorized"
+  defp reason_phrase(400), do: "Bad Request"
   defp reason_phrase(_), do: "Error"
 end

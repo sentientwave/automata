@@ -3,7 +3,7 @@ defmodule SentientwaveAutomata.Settings.LLMProviderConfig do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @providers ~w(local openai anthropic cerebras openrouter lm-studio ollama)
+  @providers ~w(local openai gemini anthropic cerebras openrouter lm-studio ollama)
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

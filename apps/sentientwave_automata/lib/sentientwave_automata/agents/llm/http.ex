@@ -4,35 +4,40 @@ defmodule SentientwaveAutomata.Agents.LLM.HTTP do
   @spec post_json(String.t(), [{String.t(), String.t()}], map(), keyword()) ::
           {:ok, integer(), map()} | {:error, term()}
   def post_json(url, headers, payload, opts \\ []) do
-    body = Jason.encode!(payload)
-
     timeout =
       Keyword.get(opts, :timeout, timeout_from_seconds(Keyword.get(opts, :timeout_seconds, nil)))
 
     connect_timeout = Keyword.get(opts, :connect_timeout, default_connect_timeout())
+    request_headers = [{"content-type", "application/json"} | headers]
 
-    req_headers =
-      [{"content-type", "application/json"} | headers]
-      |> Enum.map(fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
-
-    req = {to_charlist(url), req_headers, ~c"application/json", body}
-    http_opts = [timeout: timeout, connect_timeout: connect_timeout]
-
-    case :httpc.request(:post, req, http_opts, body_format: :binary) do
-      {:ok, {{_, status, _}, _resp_headers, resp_body}} ->
-        decode_json(status, resp_body)
+    case Req.post(
+           url: url,
+           headers: request_headers,
+           json: payload,
+           receive_timeout: timeout,
+           connect_options: [timeout: connect_timeout],
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: status, body: body}} ->
+        decode_body(status, body)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp decode_json(status, body) when is_binary(body) do
+  defp decode_body(status, body) when is_map(body) do
+    {:ok, status, body}
+  end
+
+  defp decode_body(status, body) when is_binary(body) do
     case Jason.decode(body) do
       {:ok, json} -> {:ok, status, json}
       {:error, reason} -> {:error, {:invalid_json_response, reason, body}}
     end
   end
+
+  defp decode_body(_status, body), do: {:error, {:unexpected_response_body, body}}
 
   defp default_timeout do
     System.get_env("AUTOMATA_LLM_TIMEOUT_MS", "600000")

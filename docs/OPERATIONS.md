@@ -152,6 +152,7 @@ Example mention payload:
 - The poller ignores the bot's own events and forwards room `m.room.message` events into mention dispatch.
 - Mention-triggered agent inference runs through an abstracted provider layer and supports:
   - `openai`
+  - `gemini`
   - `openrouter`
   - `lm-studio`
   - `ollama`
