@@ -65,6 +65,12 @@ If you can complete those steps, your system is up and ready to use.
 
 For a scripted walkthrough, see [Demo Guide](docs/DEMO.md).
 
+## Kubernetes Deployment (Helm)
+
+For on-premise production environments, Automata provides a fully featured Helm chart optimized for `k3s`. It supports Let's Encrypt, custom domains, distributed Elixir clustering, and remote access via Tailscale.
+
+For instructions on deploying the Helm chart, see the [Kubernetes Deployment Guide](docs/K8S_DEPLOYMENT.md).
+
 ## Why Work Keeps Running
 
 Automata is built so important work does not disappear when a task takes time or the system restarts. Under the hood, it uses Temporal, a workflow system that saves progress step by step instead of depending on one live process staying healthy from beginning to end.
@@ -123,6 +129,7 @@ For the full and continuously updated list, see:
 
 - [Demo Guide](docs/DEMO.md)
 - [Operations](docs/OPERATIONS.md)
+- [Kubernetes Deployment](docs/K8S_DEPLOYMENT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [QA Strategy](docs/QA_STRATEGY.md)
 - [Roadmap](ROADMAP.md)

@@ -1,0 +1,24 @@
+{{- if .Values.tailscale.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "automata.fullname" . }}-tailscale
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+  {{- with .Values.tailscale.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.tailscale.className }}
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
