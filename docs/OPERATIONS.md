@@ -26,6 +26,61 @@ Enterprise:
 - Temporal persistence and visibility backups together
 - quarterly restore drills
 
+## NixOS Native Deployment (Flake)
+
+Automata provides a native NixOS module exposed via a flake in `deploy/nixos`. This allows you to easily enable Automata and its dependencies (PostgreSQL with pgvector, Matrix Synapse, and Temporal) on any existing NixOS system without Docker or Podman.
+
+To use the flake in your system configuration:
+
+1. Add the flake to your `flake.nix` inputs:
+   ```nix
+   inputs.automata.url = "github:sentientwave/automata?dir=deploy/nixos";
+   ```
+
+2. Import the module and enable the service in your system configuration:
+   ```nix
+   { inputs, ... }: {
+     imports = [ inputs.automata.nixosModules.default ];
+
+     services.automata = {
+       enable = true;
+       domain = "app.yourdomain.com";
+       package = inputs.automata-release.packages.x86_64-linux.default; # Provide your built Automata release
+     };
+   }
+   ```
+
+### Legacy NixOS Deployment (No Flakes)
+
+If your target NixOS system does not use Flakes, you can still easily integrate the native module by dynamically fetching the GitHub repository tarball using `fetchTarball`. 
+
+In your `configuration.nix`:
+
+```nix
+{ config, pkgs, ... }:
+
+let
+  # Dynamically pull the latest source code tarball
+  automataSrc = fetchTarball "https://github.com/sentientwave/automata/archive/dev.tar.gz";
+in
+{
+  # 1. Import the module.nix directly from the extracted tarball path
+  imports = [
+    "${automataSrc}/deploy/nixos/module.nix"
+  ];
+
+  # 2. Configure the native service just like with Flakes
+  services.automata = {
+    enable = true;
+    domain = "app.yourdomain.com";
+    
+    # Point to the built automata package 
+    # (e.g. from a callPackage in the repository or a standalone binary wrapper)
+    package = pkgs.callPackage automataSrc {}; 
+  };
+}
+```
+
 ## All-In-One (Dev/Pilot, Single Container)
 
 The `deploy/all-in-one` bundle runs:
