@@ -11,8 +11,21 @@ config :sentientwave_automata_web, SentientwaveAutomataWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
 truthy? = fn value -> value in ["1", "true", "TRUE", "yes", "YES", true] end
+
+env_enabled? = fn key, default ->
+  case System.get_env(key) do
+    nil -> default
+    value -> truthy?.(value)
+  end
+end
+
 allow_local_fallbacks = truthy?.(System.get_env("AUTOMATA_ALLOW_LOCAL_FALLBACKS", "false"))
 local_fallbacks_allowed = config_env() != :prod or allow_local_fallbacks
+
+background_workers_enabled =
+  env_enabled?.("AUTOMATA_BACKGROUND_WORKERS_ENABLED", config_env() != :test)
+
+temporal_enabled = env_enabled?.("AUTOMATA_TEMPORAL_ENABLED", config_env() != :test)
 
 default_matrix_adapter_name =
   if config_env() == :prod and not allow_local_fallbacks do
@@ -120,7 +133,7 @@ temporal_activity_task_queue =
 temporal_worker_identity_prefix =
   System.get_env("AUTOMATA_TEMPORAL_WORKER_IDENTITY_PREFIX", "automata")
 
-if config_env() != :test do
+if config_env() != :test and temporal_enabled do
   config :temporal_sdk,
     node: %{scope_config: [automata: 10]},
     clusters: [
@@ -140,12 +153,15 @@ else
   config :temporal_sdk, node: %{scope_config: []}, clusters: []
 end
 
+config :sentientwave_automata_temporal, bootstrap_enabled: temporal_enabled
+
 config :sentientwave_automata,
   temporal_cluster: :automata,
   temporal_namespace: temporal_namespace,
   temporal_workflow_task_queue: temporal_workflow_task_queue,
   temporal_activity_task_queue: temporal_activity_task_queue,
   temporal_worker_identity_prefix: temporal_worker_identity_prefix,
+  background_workers_enabled: background_workers_enabled,
   allow_local_fallbacks: allow_local_fallbacks,
   deep_research_max_rounds:
     String.to_integer(System.get_env("AUTOMATA_DEEP_RESEARCH_MAX_ROUNDS", "2")),

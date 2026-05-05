@@ -9,6 +9,16 @@
 # move said applications out of the umbrella.
 import Config
 
+truthy? = fn value -> value in ["1", "true", "TRUE", "yes", "YES", true] end
+
+default_temporal_enabled? = config_env() != :test
+
+temporal_enabled? =
+  case System.get_env("AUTOMATA_TEMPORAL_ENABLED") do
+    nil -> default_temporal_enabled?
+    value -> truthy?.(value)
+  end
+
 default_matrix_adapter =
   if config_env() == :prod do
     SentientwaveAutomata.Adapters.Matrix.Synapse
@@ -39,7 +49,7 @@ config :sentientwave_automata,
   embedding_dim: 64,
   agent_skills_path: "skills"
 
-if config_env() == :test do
+if config_env() == :test or not temporal_enabled? do
   config :temporal_sdk, node: %{scope_config: []}, clusters: []
 else
   config :temporal_sdk,
@@ -58,6 +68,8 @@ else
       ]
     ]
 end
+
+config :sentientwave_automata_temporal, bootstrap_enabled: temporal_enabled?
 
 config :sentientwave_automata_web,
   ecto_repos: [SentientwaveAutomata.Repo],
