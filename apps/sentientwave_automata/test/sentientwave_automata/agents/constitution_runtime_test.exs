@@ -168,7 +168,7 @@ defmodule SentientwaveAutomata.Agents.ConstitutionRuntimeTest do
                  room_id: "!constitution-#{suffix}:localhost",
                  input: %{
                    body: "Use the constitution snapshot",
-                   sender_mxid: "@mio:localhost",
+                   sender_mxid: "@requester:localhost",
                    conversation_scope: "room"
                  },
                  metadata: %{agent_slug: agent.slug}
@@ -223,10 +223,10 @@ defmodule SentientwaveAutomata.Agents.ConstitutionRuntimeTest do
                run,
                %{
                  room_id: "!constitution-guard-#{suffix}:localhost",
-                 requested_by: "@mio:localhost",
+                 requested_by: "@requester:localhost",
                  input: %{
                    body: "Should we launch this change?",
-                   sender_mxid: "@mio:localhost",
+                   sender_mxid: "@requester:localhost",
                    conversation_scope: "room"
                  }
                },
@@ -279,10 +279,10 @@ defmodule SentientwaveAutomata.Agents.ConstitutionRuntimeTest do
                run,
                %{
                  room_id: "!constitution-block-#{suffix}:localhost",
-                 requested_by: "@mio:localhost",
+                 requested_by: "@requester:localhost",
                  input: %{
                    body: "Should we launch this change?",
-                   sender_mxid: "@mio:localhost",
+                   sender_mxid: "@requester:localhost",
                    conversation_scope: "room"
                  }
                },

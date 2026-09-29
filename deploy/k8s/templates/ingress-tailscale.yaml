@@ -11,7 +11,24 @@ metadata:
   {{- end }}
 spec:
   ingressClassName: {{ .Values.tailscale.className }}
+  {{- if .Values.tailscale.host }}
+  tls:
+    - hosts:
+        - {{ .Values.tailscale.host }}
+  {{- end }}
   rules:
+    {{- if .Values.tailscale.host }}
+    - host: {{ .Values.tailscale.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+    {{- else }}
     - http:
         paths:
           - path: /
@@ -21,4 +38,5 @@ spec:
                 name: {{ include "automata.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
+    {{- end }}
 {{- end }}

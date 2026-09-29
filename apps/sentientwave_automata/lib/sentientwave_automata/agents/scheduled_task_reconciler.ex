@@ -12,19 +12,30 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskReconciler do
   require Logger
 
   @reconcile_interval_ms 30_000
+  # B11: the reconciler used to send a "refresh" signal to EVERY enabled task
+  # every 30s even when nothing changed. Each signal interrupts the workflow's
+  # pending timer, reloads state and rewrites history (~2,880 events/task/day
+  # of pure churn in Temporal/YB history storage). Tasks are now only signalled
+  # when their fingerprint actually changed.
+  @state_key {__MODULE__, :task_fingerprints}
 
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
   def reconcile do
+    state = :persistent_term.get(@state_key, %{})
+
     enabled_by_id =
       Agents.list_enabled_scheduled_tasks()
       |> Map.new(&{&1.id, &1})
 
     Enum.each(enabled_by_id, fn {_id, task} ->
-      ensure_task_workflow(task)
+      ensure_task_workflow(task, state)
     end)
+
+    fingerprints = Map.new(enabled_by_id, fn {id, t} -> {id, task_fingerprint(t)} end)
+    :persistent_term.put(@state_key, fingerprints)
 
     Agents.list_temporal_managed_scheduled_tasks()
     |> Enum.reject(&Map.has_key?(enabled_by_id, &1.id))
@@ -50,7 +61,14 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskReconciler do
     {:noreply, state}
   end
 
-  defp ensure_task_workflow(%ScheduledTask{} = task) do
+  # Fields whose change the workflow must observe (schedule, prompt, enabled).
+  defp task_fingerprint(%ScheduledTask{} = task) do
+    {task.schedule_type, task.schedule_interval, task.schedule_hour, task.schedule_minute,
+     task.schedule_weekday, task.timezone, task.prompt_body, task.message_body, task.enabled,
+     task.next_run_at, task.updated_at}
+  end
+
+  defp ensure_task_workflow(%ScheduledTask{} = task, state) do
     desired_workflow_id = Temporal.child_workflow_id("scheduled_task", task.id)
 
     cond do
@@ -77,10 +95,16 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskReconciler do
         end
 
       true ->
-        _ =
-          temporal_adapter().signal_workflow(task.workflow_id, "refresh", %{"task_id" => task.id})
+        if Map.get(state, task.id) == task_fingerprint(task) do
+          :ok
+        else
+          _ =
+            temporal_adapter().signal_workflow(task.workflow_id, "refresh", %{
+              "task_id" => task.id
+            })
 
-        :ok
+          :ok
+        end
     end
   end
 

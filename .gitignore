@@ -29,3 +29,6 @@ erl_crash.dump
 
 **/priv/static
 **/.kube
+
+# Local environment file (see deploy/all-in-one/env.template)
+.env

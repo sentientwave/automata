@@ -8,9 +8,14 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
   alias SentientwaveAutomata.Governance
   alias SentientwaveAutomata.Governance.LawProposal
   alias SentientwaveAutomata.Governance.LawVote
+  alias SentientwaveAutomata.Governance.RoleAssignment
   alias SentientwaveAutomata.Governance.Room
   alias SentientwaveAutomata.Matrix.Directory
   alias SentientwaveAutomata.Matrix.DirectoryUser
+  alias SentientwaveAutomata.Repo
+
+  import Ecto.Query, warn: false
+
   require Logger
 
   @non_retryable_errors [
@@ -35,7 +40,9 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
     actor = resolve_actor!(command)
 
     if allowed_to_open?(actor) do
-      attrs = proposal_attrs(command, actor, workflow_id)
+      role_ids = resolve_role_ids!(fetch_list(command, "eligible_role_ids"))
+      ensure_actor_holds_roles!(actor, role_ids)
+      attrs = proposal_attrs(command, actor, workflow_id, role_ids)
       proposal = unwrap_result!(Governance.open_law_proposal(attrs), "open governance proposal")
       :ok = announce_proposal_opened(proposal, actor)
       [serialize_proposal(proposal)]
@@ -106,12 +113,15 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
 
   defp maybe_apply_approved_proposal(_proposal), do: nil
 
-  defp proposal_attrs(command, %DirectoryUser{} = actor, workflow_id) do
+  defp proposal_attrs(command, %DirectoryUser{} = actor, workflow_id, role_ids) do
     proposal_payload = fetch_map(command, "proposal")
     target_ref = fetch_value(command, "target_ref")
-    role_ids = resolve_role_ids(fetch_list(command, "eligible_role_ids"))
 
     %{
+      # Reference is caller-supplied when present (trusted control-plane callers
+      # correlate by it). Collision-safety comes from the random server-side
+      # generator plus the non-retryable changeset handling below: a duplicate
+      # reference now fails fast instead of retrying forever.
       "reference" =>
         fetch_value(command, "reference") || fetch_value(proposal_payload, "reference"),
       "workflow_id" => workflow_id,
@@ -149,7 +159,7 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
 
   defp vote_attrs(command) do
     %{
-      "choice" => normalize_vote_choice(fetch_value(command, "choice")),
+      "choice" => normalize_vote_choice!(fetch_value(command, "choice")),
       "room_id" => fetch_value(command, "room_id"),
       "message_id" => fetch_value(command, "message_id"),
       "raw_event" => fetch_map(command, "raw_event"),
@@ -186,22 +196,59 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
     end
   end
 
-  defp resolve_role_ids(role_refs) when is_list(role_refs) do
-    role_refs
-    |> Enum.map(fn ref ->
-      cond do
-        role = Governance.get_role(to_string(ref)) ->
-          role.id
+  # Strict resolution: an unresolvable role ref must fail the proposal instead of
+  # silently widening the electorate to all_members (typo'd slug => public vote).
+  defp resolve_role_ids!(role_refs) when is_list(role_refs) do
+    {resolved, unresolved} =
+      role_refs
+      |> Enum.map(fn ref ->
+        cond do
+          role = Governance.get_role(to_string(ref)) ->
+            {:ok, role.id}
 
-        role = Governance.get_role_by_slug(to_string(ref)) ->
-          role.id
+          role = Governance.get_role_by_slug(to_string(ref)) ->
+            {:ok, role.id}
 
-        true ->
-          nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
+          true ->
+            {:error, to_string(ref)}
+        end
+      end)
+      |> Enum.split_with(&match?({:ok, _}, &1))
+
+    unresolved_refs = Enum.map(unresolved, fn {:error, ref} -> ref end)
+
+    if unresolved_refs == [] do
+      resolved |> Enum.map(fn {:ok, id} -> id end) |> Enum.uniq()
+    else
+      fail_non_retryable(
+        "governance.proposal.unresolved_eligible_roles",
+        "unresolvable eligible_role_ids: #{Enum.join(unresolved_refs, ", ")}"
+      )
+    end
+  end
+
+  # Electorate scoping is privileged: the proposer must hold every role they
+  # name, otherwise a user could scope a vote to a role only they hold and
+  # approve their own law unilaterally.
+  defp ensure_actor_holds_roles!(_actor, []), do: :ok
+
+  defp ensure_actor_holds_roles!(%DirectoryUser{id: user_id}, role_ids) do
+    held =
+      RoleAssignment
+      |> where([a], a.user_id == ^user_id and a.status == :active and a.role_id in ^role_ids)
+      |> Repo.all()
+      |> MapSet.new(& &1.role_id)
+
+    missing = Enum.reject(role_ids, &MapSet.member?(held, &1))
+
+    if missing == [] do
+      :ok
+    else
+      fail_non_retryable(
+        "governance.proposal.eligible_roles_not_held",
+        "proposer does not hold all roles used to scope the electorate"
+      )
+    end
   end
 
   defp resolve_actor!(command) do
@@ -330,6 +377,21 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
   defp normalize_vote_choice(value) when is_binary(value), do: String.trim(value)
   defp normalize_vote_choice(_value), do: "reject"
 
+  # A missing/unrecognized choice must never be recorded as a counted REJECT:
+  # that would boost turnout and quorum with a vote the user never cast.
+  defp normalize_vote_choice!(value) do
+    case normalize_vote_choice(value) do
+      choice when choice in ["approve", "reject", "abstain"] ->
+        choice
+
+      other ->
+        fail_non_retryable(
+          "governance.vote.invalid_choice",
+          "vote choice must be approve, reject, or abstain; got: #{inspect(other)}"
+        )
+    end
+  end
+
   defp fetch_value(map, key) when is_map(map) do
     atom_key =
       case key do
@@ -404,6 +466,16 @@ defmodule SentientwaveAutomata.Governance.ProposalActivities do
 
   defp unwrap_result!({:error, reason}, action) when reason in @non_retryable_errors do
     fail_non_retryable("governance.proposal.#{reason}", "#{action} failed: #{inspect(reason)}")
+  end
+
+  # Changeset errors (validation failures, unique-index collisions such as a
+  # duplicate proposal reference) are deterministic - retrying forever just
+  # wedges the workflow. Fail fast instead.
+  defp unwrap_result!({:error, %Ecto.Changeset{} = changeset}, action) do
+    fail_non_retryable(
+      "governance.proposal.changeset",
+      "#{action} failed: #{inspect(changeset.errors)}"
+    )
   end
 
   defp unwrap_result!({:error, reason}, action) do

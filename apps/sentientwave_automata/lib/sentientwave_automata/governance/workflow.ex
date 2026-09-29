@@ -25,8 +25,21 @@ defmodule SentientwaveAutomata.Governance.Workflow do
   @spec open_proposal(map()) :: {:ok, LawProposal.t()} | {:error, term()}
   def open_proposal(command) when is_map(command) do
     with {:ok, actor} <- resolve_actor(command),
-         true <- allowed_to_open?(actor) || {:error, :not_authorized},
-         workflow_id <- Temporal.generated_workflow_id("governance_proposal"),
+         true <- allowed_to_open?(actor) || {:error, :not_authorized} do
+      # Redelivered Matrix events (sync stream retries) must not create a
+      # second proposal for the same message: the first delivery already
+      # stored its proposal_message_id.
+      case existing_proposal_for_message(command) do
+        %LawProposal{} = existing -> {:ok, existing}
+        nil -> start_open_proposal(command)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_open_proposal(command) do
+    with workflow_id <- Temporal.generated_workflow_id("governance_proposal"),
          {:ok, _temporal} <-
            temporal_adapter().start_workflow(
              "governance_proposal_workflow",
@@ -42,18 +55,31 @@ defmodule SentientwaveAutomata.Governance.Workflow do
     end
   end
 
+  defp existing_proposal_for_message(command) do
+    message_id = fetch_value(command, "message_id")
+
+    if is_binary(message_id) and String.trim(message_id) != "" do
+      Repo.get_by(LawProposal, proposal_message_id: String.trim(message_id))
+    else
+      nil
+    end
+  end
+
   @spec cast_vote(map()) :: {:ok, Governance.LawVote.t()} | {:error, term()}
   def cast_vote(command) when is_map(command) do
     with {:ok, actor} <- resolve_actor(command),
          {:ok, proposal} <- resolve_open_proposal(command),
          {:ok, workflow_id} <- ensure_proposal_workflow(proposal),
+         # G3: snapshot any PRIOR vote so await_vote can tell "old vote row"
+         # apart from THIS signal being processed.
+         baseline <- prior_vote_snapshot(proposal.id, actor.id),
          :ok <-
            temporal_adapter().signal_workflow(
              workflow_id,
              @vote_signal,
              normalize_command(Map.put(command, :actor_id, actor.id))
            ),
-         {:ok, vote} <- await_vote(proposal.id, actor.id, @poll_timeout_ms) do
+         {:ok, vote} <- await_vote(proposal.id, actor.id, baseline, @poll_timeout_ms) do
       {:ok, vote}
     end
   end
@@ -64,7 +90,8 @@ defmodule SentientwaveAutomata.Governance.Workflow do
   end
 
   def resolve_proposal(%{} = attrs) do
-    with {:ok, proposal} <- resolve_proposal_record(attrs),
+    with {:ok, _actor} <- authorize_resolver(attrs),
+         {:ok, proposal} <- resolve_proposal_record(attrs),
          {:ok, workflow_id} <- ensure_proposal_workflow(proposal),
          :ok <-
            temporal_adapter().signal_workflow(
@@ -108,6 +135,16 @@ defmodule SentientwaveAutomata.Governance.Workflow do
     :ok
   end
 
+  # G6: resolving a proposal early is a privileged action - it must not be
+  # callable by an unauthenticated caller (open/cast_vote already require an
+  # authorized actor).
+  defp authorize_resolver(attrs) do
+    with {:ok, actor} <- resolve_actor(attrs),
+         true <- allowed_to_open?(actor) || {:error, :not_authorized} do
+      {:ok, actor}
+    end
+  end
+
   defp ensure_proposal_workflow(%LawProposal{} = proposal) do
     workflow_id =
       proposal.workflow_id ||
@@ -119,13 +156,24 @@ defmodule SentientwaveAutomata.Governance.Workflow do
           {:ok, _status} ->
             {:ok, value}
 
-          {:error, _reason} ->
-            start_resume_workflow(proposal, workflow_id)
+          {:error, reason} ->
+            if workflow_missing?(reason) do
+              start_resume_workflow(proposal, workflow_id)
+            else
+              # Transient query failure (timeout, unavailable): restarting
+              # would collide with the LIVE workflow (duplicate workflow id),
+              # breaking votes/resolve until the query succeeds. Surface it.
+              {:error, {:proposal_workflow_query_failed, reason}}
+            end
         end
 
       _ ->
         start_resume_workflow(proposal, workflow_id)
     end
+  end
+
+  defp workflow_missing?(reason) do
+    reason |> inspect() |> String.downcase() |> String.contains?("not_found")
   end
 
   defp start_resume_workflow(%LawProposal{} = proposal, workflow_id) do
@@ -166,18 +214,68 @@ defmodule SentientwaveAutomata.Governance.Workflow do
     end
   end
 
-  defp await_vote(_proposal_id, _actor_id, remaining_ms) when remaining_ms <= 0,
-    do: {:error, :vote_not_persisted}
+  defp prior_vote_snapshot(proposal_id, actor_id) do
+    case Repo.get_by(Governance.LawVote, proposal_id: proposal_id, voter_id: actor_id) do
+      %Governance.LawVote{} = vote -> {vote.choice, vote.updated_at}
+      nil -> nil
+    end
+  end
 
-  defp await_vote(proposal_id, actor_id, remaining_ms) do
+  # No prior vote: the first row that appears IS this vote.
+  defp await_vote(proposal_id, actor_id, nil, remaining_ms) do
+    if remaining_ms <= 0 do
+      {:error, :vote_not_persisted}
+    else
+      case Repo.get_by(Governance.LawVote, proposal_id: proposal_id, voter_id: actor_id) do
+        %Governance.LawVote{} = vote ->
+          {:ok, Repo.preload(vote, [:voter])}
+
+        nil ->
+          Process.sleep(@poll_interval_ms)
+          await_vote(proposal_id, actor_id, nil, remaining_ms - @poll_interval_ms)
+      end
+    end
+  end
+
+  # G3: a pre-existing vote must not be reported as the result of THIS signal -
+  # wait until the choice changes or the row is updated, otherwise failures
+  # like :not_open/:ineligible_voter would be masked by a stale success.
+  defp await_vote(_proposal_id, _actor_id, _baseline, remaining_ms)
+       when remaining_ms <= 0 do
+    {:error, :vote_not_recorded}
+  end
+
+  defp await_vote(proposal_id, actor_id, {prior_choice, prior_updated_at}, remaining_ms) do
     case Repo.get_by(Governance.LawVote, proposal_id: proposal_id, voter_id: actor_id) do
       %Governance.LawVote{} = vote ->
-        {:ok, Repo.preload(vote, [:voter])}
+        if vote_changed?(vote, prior_choice, prior_updated_at) do
+          {:ok, Repo.preload(vote, [:voter])}
+        else
+          Process.sleep(@poll_interval_ms)
+
+          await_vote(
+            proposal_id,
+            actor_id,
+            {prior_choice, prior_updated_at},
+            remaining_ms - @poll_interval_ms
+          )
+        end
 
       nil ->
         Process.sleep(@poll_interval_ms)
-        await_vote(proposal_id, actor_id, remaining_ms - @poll_interval_ms)
+
+        await_vote(
+          proposal_id,
+          actor_id,
+          {prior_choice, prior_updated_at},
+          remaining_ms - @poll_interval_ms
+        )
     end
+  end
+
+  defp vote_changed?(%{choice: choice, updated_at: updated_at}, prior_choice, prior_ts) do
+    choice != prior_choice or
+      (updated_at != nil and prior_ts != nil and DateTime.compare(updated_at, prior_ts) == :gt)
   end
 
   defp await_resolved_proposal(_proposal_id, remaining_ms) when remaining_ms <= 0,

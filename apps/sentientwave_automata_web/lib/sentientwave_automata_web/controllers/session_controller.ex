@@ -16,7 +16,11 @@ defmodule SentientwaveAutomataWeb.SessionController do
   end
 
   def create(conn, %{"username" => username, "password" => password}) do
-    if AdminAuth.valid_credentials?(username, password) do
+    ip = remote_ip(conn)
+    valid? = AdminAuth.valid_credentials?(username, password)
+    locked? = SentientwaveAutomataWeb.LoginThrottle.record(ip, valid?)
+
+    if valid? and not locked? do
       conn
       |> configure_session(renew: true)
       |> AdminAuth.login()
@@ -34,6 +38,10 @@ defmodule SentientwaveAutomataWeb.SessionController do
     |> put_flash(:error, "Username and password are required.")
     |> redirect(to: "/login")
   end
+
+  defp remote_ip(%Plug.Conn{remote_ip: {a, b, c, d}}), do: "#{a}.#{b}.#{c}.#{d}"
+  defp remote_ip(%Plug.Conn{remote_ip: {:inet6_ip_addrs, _}}), do: "::1"
+  defp remote_ip(_conn), do: "unknown"
 
   def delete(conn, _params) do
     conn

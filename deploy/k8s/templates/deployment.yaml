@@ -19,6 +19,7 @@ spec:
       {{- end }}
       labels:
         {{- include "automata.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: automata
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -47,9 +48,21 @@ spec:
               echo "Migrations complete"
           env:
             - name: DATABASE_URL
-              value: {{ printf "ecto://%s:%s@%s-postgres:5432/automata" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "automata.fullname" .) | quote }}
-            - name: MIX_ENV
-              value: "prod"
+              value: {{ printf "ecto://%s:%s@%s-core-postgres:5432/automata" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "automata.fullname" .) | quote }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ printf "%s-temporal:7233" (include "automata.fullname" .) | quote }}
+            - name: MATRIX_HOMESERVER_URL
+              value: {{ printf "http://%s-matrix:8008" (include "automata.fullname" .) | quote }}
+            - name: MATRIX_URL
+              value: {{ printf "http://%s-matrix:8008" (include "automata.fullname" .) | quote }}
+            - name: MATRIX_ADAPTER
+              value: "synapse"
+            {{- range $key, $val := .Values.env }}
+            {{- if and (ne $key "DATABASE_URL") (ne $key "TEMPORAL_ADDRESS") }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           {{- with .Values.securityContext }}
@@ -64,7 +77,7 @@ spec:
               protocol: TCP
           env:
             - name: DATABASE_URL
-              value: {{ printf "ecto://%s:%s@%s-postgres:5432/automata" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "automata.fullname" .) | quote }}
+              value: {{ printf "ecto://%s:%s@%s-core-postgres:5432/automata" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "automata.fullname" .) | quote }}
             - name: TEMPORAL_ADDRESS
               value: {{ printf "%s-temporal:7233" (include "automata.fullname" .) | quote }}
             - name: MATRIX_HOMESERVER_URL
@@ -87,6 +100,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+          {{- with .Values.envFromSecrets }}
+          envFrom:
+            {{- range . }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

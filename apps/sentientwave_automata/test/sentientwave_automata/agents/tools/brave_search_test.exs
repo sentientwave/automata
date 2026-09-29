@@ -14,7 +14,7 @@ defmodule SentientwaveAutomata.Agents.Tools.BraveSearchTest do
     })
 
     assert {:ok, result} =
-             BraveSearch.call(
+             BraveSearch.execute_direct(
                %{
                  "query" => "primary query",
                  "queries" => ["related query", "source query"],
@@ -59,7 +59,7 @@ defmodule SentientwaveAutomata.Agents.Tools.BraveSearchTest do
     })
 
     assert {:ok, result} =
-             BraveSearch.call(
+             BraveSearch.execute_direct(
                %{
                  "query" => "primary query",
                  "queries" => ["related query"],
@@ -89,7 +89,7 @@ defmodule SentientwaveAutomata.Agents.Tools.BraveSearchTest do
     })
 
     assert {:error, {:search_failed, failures}} =
-             BraveSearch.call(
+             BraveSearch.execute_direct(
                %{
                  "query" => "primary query",
                  "queries" => ["related query"],

@@ -6,126 +6,259 @@
   admin_user={@admin_user}
   nav={@nav}
 >
-  <section class="sw-card">
-    <div class="sw-section-header">
-      <div>
-        <h2 class="sw-card-title">Directory Overview</h2>
-        <p class="sw-card-copy">
-          Directory identities are the source of truth for Matrix-managed humans, agents, and services.
-        </p>
+  <div class="sw-tabs" role="tablist">
+    <a
+      href={~p"/directory/users"}
+      class={["sw-tab", @tab == :table && "is-active"]}
+      role="tab"
+      aria-selected={@tab == :table}
+    >
+      Table
+    </a>
+    <a
+      href={~p"/directory/users?tab=visualization"}
+      class={["sw-tab", @tab == :visualization && "is-active"]}
+      role="tab"
+      aria-selected={@tab == :visualization}
+    >
+      Visualization
+    </a>
+  </div>
+
+  <section :if={@tab == :table}>
+    <section class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Directory Overview</h2>
+          <p class="sw-card-copy">
+            Directory identities are the source of truth for Matrix-managed humans, agents, and services.
+          </p>
+        </div>
+        <a href={~p"/directory/users/new"} class="sw-btn sw-btn-primary">Add User</a>
       </div>
-      <a href={~p"/directory/users/new"} class="sw-btn sw-btn-primary">Add User</a>
-    </div>
 
-    <div class="sw-pill-list mt-4">
-      <span class="sw-pill">Visible: {@filtered_count}</span>
-      <span class="sw-pill">Total: {@total_count}</span>
-      <span class="sw-pill">Agents: {@agent_count}</span>
-      <span class="sw-pill">Services: {@service_count}</span>
-    </div>
-
-    <form action={~p"/directory/users"} method="get" class="sw-form-grid mt-5">
-      <label class="sw-field sw-field-span">
-        <span>Search</span>
-        <input
-          name="filters[q]"
-          class="sw-input"
-          value={@filter_form[:q].value}
-          placeholder="Search by localpart or display name"
-        />
-      </label>
-
-      <label class="sw-field">
-        <span>User Type</span>
-        <select name="filters[kind]" class="sw-select">
-          <%= for {label, value} <- @directory_kind_filter_options do %>
-            <option value={value} selected={@filter_form[:kind].value == value}>{label}</option>
-          <% end %>
-        </select>
-      </label>
-
-      <div class="sw-actions sw-field-span">
-        <button type="submit" class="sw-btn sw-btn-primary">Apply Filters</button>
-        <a href={~p"/directory/users"} class="sw-btn sw-btn-ghost">Reset</a>
+      <div class="sw-pill-list mt-4">
+        <span class="sw-pill">Visible: {@filtered_count}</span>
+        <span class="sw-pill">Total: {@total_count}</span>
+        <span class="sw-pill">Agents: {@agent_count}</span>
+        <span class="sw-pill">Services: {@service_count}</span>
       </div>
-    </form>
 
-    <div :if={@active_filters != []} class="sw-pill-list mt-4">
-      <span :for={label <- @active_filters} class="sw-pill">{label}</span>
-    </div>
+      <form action={~p"/directory/users"} method="get" class="sw-form-grid mt-5">
+        <label class="sw-field sw-field-span">
+          <span>Search</span>
+          <input
+            name="filters[q]"
+            class="sw-input"
+            value={@filter_form[:q].value}
+            placeholder="Search by localpart or display name"
+          />
+        </label>
+
+        <label class="sw-field">
+          <span>User Type</span>
+          <select name="filters[kind]" class="sw-select">
+            <%= for {label, value} <- @directory_kind_filter_options do %>
+              <option value={value} selected={@filter_form[:kind].value == value}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+
+        <div class="sw-actions sw-field-span">
+          <button type="submit" class="sw-btn sw-btn-primary">Apply Filters</button>
+          <a href={~p"/directory/users"} class="sw-btn sw-btn-ghost">Reset</a>
+        </div>
+      </form>
+
+      <div :if={@active_filters != []} class="sw-pill-list mt-4">
+        <span :for={label <- @active_filters} class="sw-pill">{label}</span>
+      </div>
+    </section>
+
+    <section class="sw-card">
+      <div class="sw-section-header">
+        <div>
+          <h2 class="sw-card-title">Directory Users</h2>
+          <p class="sw-card-copy">
+            Open any identity to edit details, rotate credentials, or inspect agent runtime state.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@users == []} class="sw-empty mt-5">
+        <h3>No directory users found</h3>
+        <p>Adjust filters or add a new human, agent, or service account.</p>
+      </div>
+
+      <div :if={@users != []} class="sw-table-wrap mt-5">
+        <table class="sw-data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Type</th>
+              <th>Display Name</th>
+              <th>Sex</th>
+              <th>Age</th>
+              <th>Reports To</th>
+              <th>Reports</th>
+              <th>Admin</th>
+              <th>Operational</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={user <- @users}>
+              <td>
+                <div class="sw-table-primary">{user.localpart}</div>
+                <div class="sw-table-secondary">
+                  @{user.localpart}:{@status.homeserver_domain}
+                </div>
+              </td>
+              <td>
+                <span class={["sw-pill", directory_kind_class(user.kind)]}>
+                  {directory_kind_label(user.kind)}
+                </span>
+              </td>
+              <td>{user.display_name}</td>
+              <td>{Map.get(Map.get(@org_lookup, user.localpart, %{}), :sex, "—")}</td>
+              <td>{Map.get(Map.get(@org_lookup, user.localpart, %{}), :age, "—")}</td>
+              <td>
+                <% org = Map.get(@org_lookup, user.localpart, %{}) %>
+                <div class="sw-table-primary">{org[:reports_to_name] || "—"}</div>
+                <div :if={org[:reports_to]} class="sw-table-secondary">@{org[:reports_to]}</div>
+              </td>
+              <td>{Map.get(org, :report_count, "—")}</td>
+              <td>
+                <span class={["sw-pill", user.admin && "is-ok"]}>
+                  {if user.admin, do: "Admin", else: "Standard"}
+                </span>
+              </td>
+              <td>
+                <%= if user.kind == :agent do %>
+                  <span class={[
+                    "sw-pill",
+                    operational_status_class(
+                      SentientwaveAutomata.DirectoryManager.operational_status(user)
+                    )
+                  ]}>
+                    {SentientwaveAutomata.DirectoryManager.operational_status(user)}
+                  </span>
+                <% else %>
+                  <span class="sw-pill">n/a</span>
+                <% end %>
+              </td>
+              <td>
+                <div class="sw-table-actions">
+                  <a
+                    href={~p"/directory/users/#{user.localpart}"}
+                    class="sw-btn sw-btn-ghost sw-btn-small"
+                  >
+                    Open
+                  </a>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </section>
 
-  <section class="sw-card">
+  <section :if={@tab == :visualization} class="sw-card">
     <div class="sw-section-header">
       <div>
-        <h2 class="sw-card-title">Directory Users</h2>
+        <h2 class="sw-card-title">Org Chart Canvas</h2>
         <p class="sw-card-copy">
-          Open any identity to edit details, rotate credentials, or inspect agent runtime state.
+          Drag empty space to pan, scroll to zoom, drag nodes to rearrange.
+          Click a node for profile details and operations.
         </p>
+      </div>
+      <div class="sw-actions">
+        <button id="org-chart-reset" type="button" class="sw-btn sw-btn-ghost">Reset View</button>
+        <a href={~p"/directory/users/new"} class="sw-btn sw-btn-primary">Add User</a>
       </div>
     </div>
 
-    <div :if={@users == []} class="sw-empty mt-5">
-      <h3>No directory users found</h3>
-      <p>Adjust filters or add a new human, agent, or service account.</p>
+    <div class="sw-org-canvas-wrap mt-5">
+      <canvas id="org-chart-canvas" data-org-layout={@org_layout_json}></canvas>
+      <div id="org-chart-tooltip" class="sw-org-tooltip hidden">
+        <div class="sw-org-tooltip-inner">
+          <strong data-org-tip-name></strong>
+          <span data-org-tip-title></span>
+          <span data-org-tip-meta></span>
+          <a data-org-tip-link class="sw-btn sw-btn-ghost sw-btn-small">Open Profile</a>
+        </div>
+      </div>
     </div>
 
-    <div :if={@users != []} class="sw-table-wrap mt-5">
-      <table class="sw-data-table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Type</th>
-            <th>Display Name</th>
-            <th>Admin</th>
-            <th>Operational</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr :for={user <- @users}>
-            <td>
-              <div class="sw-table-primary">{user.localpart}</div>
-              <div class="sw-table-secondary">@{user.localpart}:{@status.homeserver_domain}</div>
-            </td>
-            <td>
-              <span class={["sw-pill", directory_kind_class(user.kind)]}>
-                {directory_kind_label(user.kind)}
-              </span>
-            </td>
-            <td>{user.display_name}</td>
-            <td>
-              <span class={["sw-pill", user.admin && "is-ok"]}>
-                {if user.admin, do: "Admin", else: "Standard"}
-              </span>
-            </td>
-            <td>
-              <%= if user.kind == :agent do %>
-                <span class={[
-                  "sw-pill",
-                  operational_status_class(
-                    SentientwaveAutomata.DirectoryManager.operational_status(user)
-                  )
-                ]}>
-                  {SentientwaveAutomata.DirectoryManager.operational_status(user)}
-                </span>
-              <% else %>
-                <span class="sw-pill">n/a</span>
-              <% end %>
-            </td>
-            <td>
-              <div class="sw-table-actions">
-                <a
-                  href={~p"/directory/users/#{user.localpart}"}
-                  class="sw-btn sw-btn-ghost sw-btn-small"
-                >
-                  Open
-                </a>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <details class="sw-card mt-5">
+      <summary class="sw-card-title">Hire into the Org Chart</summary>
+      <form action={~p"/org-chart/hire"} method="post" class="sw-form-grid mt-5">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+
+        <label class="sw-field">
+          <span>Localpart *</span>
+          <input name="org[localpart]" class="sw-input" placeholder="jane.doe" required />
+        </label>
+        <label class="sw-field">
+          <span>Display Name *</span>
+          <input name="org[display_name]" class="sw-input" placeholder="Jane Doe" required />
+        </label>
+        <label class="sw-field">
+          <span>Title *</span>
+          <input
+            name="org[title]"
+            class="sw-input"
+            placeholder="Equity Research Analyst"
+            required
+          />
+        </label>
+        <label class="sw-field">
+          <span>Department *</span>
+          <input
+            name="org[department]"
+            class="sw-input"
+            placeholder="Investments Department"
+            required
+          />
+        </label>
+        <label class="sw-field">
+          <span>Team</span>
+          <input name="org[team]" class="sw-input" placeholder="Public Markets Team" />
+        </label>
+        <label class="sw-field">
+          <span>Reports To *</span>
+          <select name="org[reports_to]" class="sw-select" required>
+            <%= for {label, value} <- @reports_to_options do %>
+              <option value={value}>{label}</option>
+            <% end %>
+          </select>
+        </label>
+        <label class="sw-field">
+          <span>Sex</span>
+          <select name="org[sex]" class="sw-select">
+            <option value="">not set</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+          </select>
+        </label>
+        <label class="sw-field">
+          <span>Date of Birth</span>
+          <input name="org[date_of_birth]" class="sw-input" placeholder="1992-03-11" />
+        </label>
+        <label class="sw-field">
+          <span>Bio</span>
+          <textarea name="org[bio]" class="sw-textarea" rows="2"></textarea>
+        </label>
+        <label class="sw-field">
+          <span>Job Description</span>
+          <textarea name="org[job_description]" class="sw-textarea" rows="2"></textarea>
+        </label>
+
+        <div class="sw-actions mt-4">
+          <button type="submit" class="sw-btn sw-btn-primary">Hire</button>
+        </div>
+      </form>
+    </details>
   </section>
 </.admin_shell>

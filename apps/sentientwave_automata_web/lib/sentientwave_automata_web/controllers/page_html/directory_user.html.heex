@@ -120,7 +120,51 @@
     </article>
   </section>
 
-  <section :if={@user.kind == :agent} class="sw-grid sw-grid-2">
+  <section :if={@user.kind == :agent and @org_entry} class="sw-grid sw-grid-2">
+    <article class="sw-card">
+      <h2 class="sw-card-title">Organization Chart</h2>
+      <div class="sw-grid sw-grid-2 mt-5">
+        <div>
+          <p class="sw-section-label">Sex</p>
+          <p class="sw-detail-value">{@org_entry.sex || "not set"}</p>
+        </div>
+        <div>
+          <p class="sw-section-label">Date of Birth</p>
+          <p class="sw-detail-value">{@org_entry.date_of_birth || "not set"}</p>
+        </div>
+        <div>
+          <p class="sw-section-label">Age</p>
+          <p class="sw-detail-value">
+            {if @org_entry.age, do: "#{@org_entry.age} years", else: "not set"}
+          </p>
+        </div>
+        <div>
+          <p class="sw-section-label">Reports To</p>
+          <p class="sw-detail-value">{@org_entry.reports_to || "nobody (top of org)"}</p>
+        </div>
+      </div>
+      <div class="mt-4">
+        <p class="sw-section-label">Company / Community Description</p>
+        <p class="sw-detail-value">{@org_entry.company_description || "not set"}</p>
+      </div>
+      <div class="mt-4">
+        <p class="sw-section-label">Job Description</p>
+        <p class="sw-detail-value">{@org_entry.job_description || "not set"}</p>
+      </div>
+      <div class="mt-4">
+        <p class="sw-section-label">Direct Reports</p>
+        <%= if @direct_reports == [] do %>
+          <p class="sw-detail-value">none</p>
+        <% else %>
+          <ul class="sw-detail-value">
+            <%= for report <- @direct_reports do %>
+              <li>{report.display_name} ({report.localpart}) — {report.title}</li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    </article>
+
     <article class="sw-card">
       <h2 class="sw-card-title">Agent Runtime Settings</h2>
       <form

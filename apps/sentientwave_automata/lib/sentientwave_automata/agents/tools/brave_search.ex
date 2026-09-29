@@ -41,11 +41,34 @@ defmodule SentientwaveAutomata.Agents.Tools.BraveSearch do
 
   @impl true
   def call(args, opts \\ []) when is_map(args) do
+    # The durable activity cannot see this process' opts, so the configured
+    # credentials travel inside the job args.
+    args =
+      args
+      |> Map.put_new("api_token", Keyword.get(opts, :api_token, "") |> to_string())
+      |> Map.put_new("base_url", Keyword.get(opts, :base_url, "") |> to_string())
+      |> Map.put_new("wait", true)
+
+    SentientwaveAutomata.Agents.Tools.OpsJob.dispatch("brave_search", args, opts, :search_failed)
+  end
+
+  @doc "Direct (non-Temporal) execution used by org-ops activities and tests."
+  def execute_direct(args, opts \\ []) when is_map(args) do
     query = args |> Map.get("query", "") |> to_string() |> String.trim()
     queries = normalize_queries(query, Map.get(args, "queries", []))
     count = args |> Map.get("count", 5) |> normalize_count()
-    token = Keyword.get(opts, :api_token, "") |> to_string() |> String.trim()
-    base_url = Keyword.get(opts, :base_url, "https://api.search.brave.com")
+
+    token =
+      (Keyword.get(opts, :api_token) || Map.get(args, "api_token", ""))
+      |> to_string()
+      |> String.trim()
+
+    base_url =
+      [Keyword.get(opts, :base_url), Map.get(args, "base_url", "")]
+      |> Enum.map(&to_string/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.at(0, "https://api.search.brave.com")
+
     http_client = Keyword.get(opts, :http_client, HTTP)
     http_opts = Keyword.get(opts, :http_opts, [])
 

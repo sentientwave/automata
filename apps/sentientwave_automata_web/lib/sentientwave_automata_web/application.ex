@@ -8,6 +8,7 @@ defmodule SentientwaveAutomataWeb.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      SentientwaveAutomataWeb.LoginThrottle,
       SentientwaveAutomataWeb.Telemetry,
       # Start a worker by calling: SentientwaveAutomataWeb.Worker.start_link(arg)
       # {SentientwaveAutomataWeb.Worker, arg},

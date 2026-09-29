@@ -13,6 +13,7 @@ spec:
       name: http
   selector:
     {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: automata
 ---
 apiVersion: v1
 kind: Service
@@ -30,3 +31,4 @@ spec:
       name: http
   selector:
     {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: automata

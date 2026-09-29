@@ -23,7 +23,13 @@ defmodule SentientwaveAutomata.Agents.Tools.RunShell do
   end
 
   @impl true
-  def call(args, _opts \\ []) when is_map(args) do
+  def call(args, opts \\ []) when is_map(args) do
+    args = if Map.has_key?(args, "wait"), do: args, else: Map.put(args, "wait", true)
+    SentientwaveAutomata.Agents.Tools.OpsJob.dispatch("run_shell", args, opts, :shell_failed)
+  end
+
+  @doc "Direct (non-Temporal) execution used by org-ops activities and tests."
+  def execute_direct(args, _opts \\ []) when is_map(args) do
     command = args |> Map.get("command", "") |> to_string() |> String.trim()
     cwd = args |> Map.get("cwd", "") |> to_string() |> String.trim()
 
@@ -44,20 +50,30 @@ defmodule SentientwaveAutomata.Agents.Tools.RunShell do
 
     result =
       try do
-        {_output, exit_code} =
-          System.cmd("/bin/sh", ["-lc", wrapped],
-            cd: cwd,
-            stderr_to_stdout: false,
-            timeout: timeout_ms()
-          )
+        # Elixir >= 1.19 removed System.cmd's :timeout option, so the deadline
+        # is enforced around the call (timeout surfaces as a caught exit).
+        task =
+          Task.async(fn ->
+            # `env -i` gives exact-replacement semantics: Erlang's :env port
+            # option only extends the inherited environment, so a bare
+            # `printenv` would otherwise see every pod secret.
+            System.cmd(
+              "/usr/bin/env",
+              ["-i" | env_assignments() ++ ["/bin/sh", "-lc", wrapped]],
+              cd: cwd,
+              stderr_to_stdout: false
+            )
+          end)
+
+        {_output, exit_code} = Task.await(task, timeout_ms())
 
         {:ok,
          %{
            "cwd" => cwd,
            "command" => command,
            "exit_code" => exit_code,
-           "stdout" => read_file(stdout_path),
-           "stderr" => read_file(stderr_path)
+           "stdout" => read_capped(stdout_path),
+           "stderr" => read_capped(stderr_path)
          }}
       rescue
         error ->
@@ -73,11 +89,27 @@ defmodule SentientwaveAutomata.Agents.Tools.RunShell do
     result
   end
 
-  defp read_file(path) do
+  # Output is fed back into the LLM context: an unbounded dump ("cat huge.log",
+  # "yes") would blow up the run. Keep head+tail around the truncation marker.
+  @max_output_bytes 64 * 1024
+
+  defp read_capped(path) do
     case File.read(path) do
-      {:ok, content} -> content
+      {:ok, content} -> cap(content)
       {:error, _} -> ""
     end
+  end
+
+  defp cap(content) when byte_size(content) <= @max_output_bytes, do: content
+
+  defp cap(content) do
+    keep = @max_output_bytes - 200
+    head = binary_part(content, 0, keep - div(keep, 2))
+    tail_start = byte_size(content) - div(keep, 2)
+    tail = binary_part(content, tail_start, byte_size(content) - tail_start)
+
+    head <>
+      "\n\n[... output truncated, #{byte_size(content)} bytes total ...]\n\n" <> tail
   end
 
   defp safe_rm(path), do: File.rm(path)
@@ -97,6 +129,30 @@ defmodule SentientwaveAutomata.Agents.Tools.RunShell do
 
   defp escape_path(path) do
     "'" <> String.replace(path, "'", "'\"'\"'") <> "'"
+  end
+
+  # The pod environment carries strong secrets (SECRET_KEY_BASE, API tokens,
+  # the LLM provider key). The LLM picks the command, so it should not be able
+  # to read them with a bare `printenv`; expose a minimal default set and let
+  # deployments widen it via AUTOMATA_RUN_SHELL_ENV (comma-separated names).
+  @default_shell_env ~w(PATH HOME USER LANG LC_ALL TZ)
+
+  defp env_assignments do
+    shell_env()
+    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
+  end
+
+  defp shell_env do
+    allowlist =
+      System.get_env("AUTOMATA_RUN_SHELL_ENV", "")
+      |> String.split(",", trim: true)
+      |> Enum.reject(&(&1 == ""))
+
+    @default_shell_env
+    |> Kernel.++(allowlist)
+    |> Enum.uniq()
+    |> Enum.filter(fn key -> System.get_env(key) != nil end)
+    |> Enum.map(fn key -> {key, System.get_env(key)} end)
   end
 
   defp timeout_ms do

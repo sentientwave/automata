@@ -8,6 +8,7 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
   alias SentientwaveAutomata.Agents
   alias SentientwaveAutomata.Agents.Durable
   alias SentientwaveAutomata.Agents.ScheduledTask
+  require Logger
 
   @impl true
   def execute(_context, [%{"step" => "load_task_state", "task_id" => task_id}]) do
@@ -37,17 +38,24 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
   defp execute_task(%ScheduledTask{} = task) do
     case Agents.claim_scheduled_task(task) do
       {:ok, claimed_task} ->
+        # Idempotency note: the claim already advanced next_run_at, so raising
+        # here would make Temporal retry re-execute the task (duplicate LLM run
+        # / duplicate Matrix post). Failures are recorded as last_outcome and
+        # returned instead; the next scheduled occurrence acts as the retry.
         {outcome, failure_reason} = do_execute_task(claimed_task)
+        outcome = put_failure(outcome, failure_reason)
 
-        _task =
-          unwrap_result!(
-            Agents.record_scheduled_task_result(claimed_task, outcome),
-            "record scheduled task result"
-          )
+        case Agents.record_scheduled_task_result(claimed_task, outcome) do
+          {:ok, _task} ->
+            [outcome]
 
-        case failure_reason do
-          nil -> [outcome]
-          reason -> raise "scheduled task execution failed: #{inspect(reason)}"
+          {:error, reason} ->
+            Logger.warning(
+              "scheduled_task_result_record_failed task_id=#{claimed_task.id} " <>
+                "reason=#{inspect(reason)}"
+            )
+
+            [outcome]
         end
 
       {:error, :stale} ->
@@ -143,6 +151,14 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
     )
   end
 
+  defp put_failure(outcome, nil), do: outcome
+
+  defp put_failure(outcome, reason) do
+    outcome
+    |> Map.put_new("status", "error")
+    |> Map.put("reason", inspect(reason))
+  end
+
   defp serialize_task(%ScheduledTask{} = task) do
     %{
       "state" => "present",
@@ -168,14 +184,6 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskActivities do
       SentientwaveAutomata.Adapters.Matrix.Local
     )
   end
-
-  defp unwrap_result!({:ok, result}, _action), do: result
-
-  defp unwrap_result!({:error, reason}, action) do
-    raise "#{action} failed: #{inspect(reason)}"
-  end
-
-  defp unwrap_result!(result, _action), do: result
 
   defp fail_non_retryable(type, message) do
     fail(message: message, type: type, non_retryable: true)

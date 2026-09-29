@@ -14,6 +14,16 @@ truthy? = fn value -> value in ["1", "true", "TRUE", "yes", "YES", true] end
 allow_local_fallbacks = truthy?.(System.get_env("AUTOMATA_ALLOW_LOCAL_FALLBACKS", "false"))
 local_fallbacks_allowed = config_env() != :prod or allow_local_fallbacks
 
+# Org ops must dispatch to a Temporal workflow. Production-strict: mandatory
+# unless AUTOMATA_ORG_OPS_REQUIRE_TEMPORAL=false; dev/test allow the inline
+# fallback unless AUTOMATA_ORG_OPS_REQUIRE_TEMPORAL=true.
+org_ops_require_temporal =
+  if config_env() == :prod do
+    truthy?.(System.get_env("AUTOMATA_ORG_OPS_REQUIRE_TEMPORAL", "true"))
+  else
+    truthy?.(System.get_env("AUTOMATA_ORG_OPS_REQUIRE_TEMPORAL", "false"))
+  end
+
 default_matrix_adapter_name =
   if config_env() == :prod and not allow_local_fallbacks do
     "synapse"
@@ -120,20 +130,60 @@ temporal_activity_task_queue =
 temporal_worker_identity_prefix =
   System.get_env("AUTOMATA_TEMPORAL_WORKER_IDENTITY_PREFIX", "automata")
 
+# Explicit Temporal type names registered with the workers. The SDK derives
+# temporal type names from module atoms (with the "Elixir." prefix), so these
+# must match the workflow/activity module names exactly.
+temporal_workflow_names = [
+  "Elixir.SentientwaveAutomata.Agents.Workflow",
+  "Elixir.SentientwaveAutomata.Agents.ScheduledTaskWorkflow",
+  "Elixir.SentientwaveAutomata.Governance.ProposalWorkflow",
+  "Elixir.SentientwaveAutomata.Orchestration.ConversationWorkflow",
+  "Elixir.SentientwaveAutomata.OrgChart.OpsWorkflow",
+  "Elixir.SentientwaveAutomataTemporal.HealthWorkflow"
+]
+
+temporal_activity_names = [
+  "Elixir.SentientwaveAutomata.Agents.WorkflowActivities",
+  "Elixir.SentientwaveAutomata.Agents.ScheduledTaskActivities",
+  "Elixir.SentientwaveAutomata.Governance.ProposalActivities",
+  "Elixir.SentientwaveAutomata.OrgChart.OpsActivities",
+  "Elixir.SentientwaveAutomata.Orchestration.Activities"
+]
+
 if config_env() != :test do
   config :temporal_sdk,
-    node: %{scope_config: [automata: 10]},
+    node: %{
+      scope_config: [automata: 10],
+      # Replace the SDK default exception logger: benign long-poll gRPC
+      # stream closes would otherwise log :error every ~40s per poller.
+      telemetry_events_handlers: [
+        {fn -> apply(:temporal_sdk_telemetry, :events_by_suffix, [[:exception]]) end,
+         &SentientwaveAutomataTemporal.Telemetry.handle_log/4}
+      ]
+    },
     clusters: [
       automata: [
         client: %{
           adapter:
             {:temporal_sdk_grpc_adapter_gun_pool,
-             [endpoints: [{temporal_host, temporal_port}], pool_size: 5]},
-          grpc_opts: [timeout: 2_000],
+             [endpoints: [{temporal_host, temporal_port}], pool_size: 15]},
+          grpc_opts: [timeout: 10_000],
           grpc_opts_longpoll: [timeout: 70_000]
         },
-        workflows: [[task_queue: temporal_workflow_task_queue]],
-        activities: [[task_queue: temporal_activity_task_queue]]
+        workflows: [
+          [
+            task_queue: temporal_workflow_task_queue,
+            allowed_temporal_names: temporal_workflow_names,
+            task_poller_pool_size: 3
+          ]
+        ],
+        activities: [
+          [
+            task_queue: temporal_activity_task_queue,
+            allowed_temporal_names: temporal_activity_names,
+            task_poller_pool_size: 5
+          ]
+        ]
       ]
     ]
 else
@@ -146,6 +196,7 @@ config :sentientwave_automata,
   temporal_workflow_task_queue: temporal_workflow_task_queue,
   temporal_activity_task_queue: temporal_activity_task_queue,
   temporal_worker_identity_prefix: temporal_worker_identity_prefix,
+  org_ops_require_temporal: org_ops_require_temporal,
   allow_local_fallbacks: allow_local_fallbacks,
   deep_research_max_rounds:
     String.to_integer(System.get_env("AUTOMATA_DEEP_RESEARCH_MAX_ROUNDS", "2")),

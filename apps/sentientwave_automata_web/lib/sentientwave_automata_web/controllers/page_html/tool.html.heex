@@ -28,6 +28,44 @@
   </section>
 
   <section class="sw-card">
+    <h2 class="sw-card-title">Role Mapping</h2>
+    <p class="sw-card-copy">
+      Map this tool to org roles. Agents holding a granted role get the tool in
+      their function-calling planner; an explicit per-agent permission row on the
+      agent's profile always overrides the role mapping.
+    </p>
+    <form action={~p"/settings/tools/#{@tool.id}/role-grants"} method="post" class="mt-5">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+      <div class="sw-grid sw-grid-3">
+        <label :for={role <- @role_options} class="sw-checkbox-row">
+          <input
+            type="checkbox"
+            name={"grants[#{role}]"}
+            value={role}
+            checked={role in @role_grants}
+          />
+          <span>
+            <strong>{role}</strong>
+            <span :if={role == "all"} class="sw-detail-value"> — every agent</span>
+            <span :if={role == "executive"} class="sw-detail-value"> — executive office</span>
+            <span :if={role == "department_head"} class="sw-detail-value">
+              — chiefs, directors, heads
+            </span>
+            <span :if={role == "team_lead"} class="sw-detail-value"> — team leads</span>
+            <span :if={role == "staff"} class="sw-detail-value"> — everyone else</span>
+          </span>
+        </label>
+      </div>
+      <div class="sw-actions mt-4">
+        <button type="submit" class="sw-btn sw-btn-primary">Save Role Mapping</button>
+      </div>
+    </form>
+    <p class="sw-detail-value mt-4">
+      No roles checked = the tool follows the default availability policy.
+    </p>
+  </section>
+
+  <section class="sw-card">
     <h2 class="sw-card-title">Tool Configuration</h2>
     <form action={~p"/settings/tools/#{@tool.id}"} method="post" class="sw-form-grid mt-5">
       <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />

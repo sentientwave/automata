@@ -1,0 +1,151 @@
+{{- if .Values.yugabyte.enabled }}
+{{- $fullname := include "automata.fullname" . }}
+{{- $replicas := int .Values.yugabyte.replicas }}
+{{- $headless := printf "%s-yugabyte-headless" $fullname }}
+{{- $mport := .Values.yugabyte.masterRpcPort }}
+{{- $tport := .Values.yugabyte.tserverRpcPort }}
+{{- $ysqlPort := .Values.yugabyte.ysqlPort }}
+{{- /* Pod names are <sts-name>-<ordinal>; sts is "<fullname>-yugabyte". */}}
+{{- $sts := printf "%s-yugabyte" $fullname }}
+{{- $masterAddrs := list }}
+{{- range $i := until $replicas }}
+{{- $masterAddrs = append $masterAddrs (printf "%s-%d.%s:%v" $sts $i $headless $mport) }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $headless }}
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: yugabyte
+spec:
+  clusterIP: None
+  # Publish before Ready so peers can resolve each other's DNS during bootstrap.
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: yugabyte
+  ports:
+    - name: master-rpc
+      port: {{ $mport }}
+    - name: tserver-rpc
+      port: {{ $tport }}
+    - name: ysql
+      port: {{ $ysqlPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-yugabyte
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: yugabyte
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: yugabyte
+  ports:
+    - name: ysql
+      port: {{ $ysqlPort }}
+      targetPort: ysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $sts }}
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: yugabyte
+spec:
+  serviceName: {{ $headless }}
+  replicas: {{ $replicas }}
+  # All pods must start together so the master quorum can form.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "automata.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: yugabyte
+  template:
+    metadata:
+      labels:
+        {{- include "automata.labels" . | nindent 8 }}
+        app.kubernetes.io/component: yugabyte
+    spec:
+      containers:
+        - name: yugabyte
+          image: "{{ .Values.yugabyte.image.repository }}:{{ .Values.yugabyte.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              ORDINAL="${HOSTNAME##*-}"
+              POD_FQDN="$(hostname -f)"
+              DATA_DIR="/data/node-${ORDINAL}"
+              mkdir -p "${DATA_DIR}"
+              echo "Starting YB node ${ORDINAL} fqdn=${POD_FQDN} data=${DATA_DIR}"
+              # Master identities are STABLE DNS names -> safe across pod IP changes/reschedules.
+              # use_cgroups_memory/cpu: without these YB auto-sizes its memory
+              # budget from the HOST RAM (e.g. 124Gi on a workstation node) and grows until the
+              # pod cgroup OOMs it. With them, YB derives limits from the pod
+              # spec (tserver 85% / master 10% of the container limit).
+              # Explicit hard memory limits: without them YB auto-sizes from
+              # host RAM (e.g. 124Gi) and grows until the cgroup OOMs it.
+              # Budget inside the 3Gi pod: tserver 1.6Gi + master 400Mi,
+              # leaving ~1.1Gi for ysql postgres backends (Temporal pool).
+              /home/yugabyte/bin/yb-master \
+                --fs_data_dirs="${DATA_DIR}" \
+                --master_addresses="{{ join "," $masterAddrs }}" \
+                --rpc_bind_addresses=0.0.0.0:{{ $mport }} \
+                --server_broadcast_addresses="${POD_FQDN}:{{ $mport }}" \
+                --replication_factor={{ $replicas }} \
+                --memory_limit_hard_bytes=419430400 &
+              MASTER_PID=$!
+              /home/yugabyte/bin/yb-tserver \
+                --fs_data_dirs="${DATA_DIR}" \
+                --tserver_master_addrs="{{ join "," $masterAddrs }}" \
+                --rpc_bind_addresses=0.0.0.0:{{ $tport }} \
+                --pgsql_proxy_bind_address=0.0.0.0:{{ $ysqlPort }} \
+                --server_broadcast_addresses="${POD_FQDN}:{{ $tport }}" \
+                --enable_ysql \
+                --memory_limit_hard_bytes=1717986918 &
+              TSERVER_PID=$!
+              # Exit if either process dies so k8s restarts the pod.
+              wait -n "${MASTER_PID}" "${TSERVER_PID}"
+              echo "yb-master or yb-tserver exited; stopping container"
+              exit 1
+          ports:
+            - name: master-rpc
+              containerPort: {{ $mport }}
+            - name: tserver-rpc
+              containerPort: {{ $tport }}
+            - name: ysql
+              containerPort: {{ $ysqlPort }}
+          startupProbe:
+            tcpSocket:
+              port: ysql
+            periodSeconds: 10
+            failureThreshold: 60   # 10 min budget for cold start / catch-up
+          readinessProbe:
+            tcpSocket:
+              port: ysql
+            periodSeconds: 10
+            failureThreshold: 6
+          {{- with .Values.yugabyte.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            path: {{ .Values.yugabyte.hostPath }}
+            type: DirectoryOrCreate
+{{- end }}

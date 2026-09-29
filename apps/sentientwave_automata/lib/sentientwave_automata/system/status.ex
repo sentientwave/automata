@@ -3,6 +3,8 @@ defmodule SentientwaveAutomata.System.Status do
   Runtime status helpers for local and all-in-one deployments.
   """
 
+  require Logger
+
   @connection_info_path "/data/connection-info.txt"
   alias SentientwaveAutomata.Settings
 
@@ -14,15 +16,24 @@ defmodule SentientwaveAutomata.System.Status do
 
     matrix_url = Map.get(info, :matrix_url, env("MATRIX_URL", "http://localhost:8008"))
     automata_url = Map.get(info, :automata_url, env("AUTOMATA_URL", "http://localhost:4000"))
-    temporal_url = env("TEMPORAL_UI_URL", "http://localhost:8233")
-    automata_check_url = add_check_path(automata_url, "/api/v1/workflows")
+
+    # The public Temporal UI location varies by deployment (in-cluster service,
+    # NodePort, localhost dev); probe candidates in order instead of hardcoding.
+    temporal_urls =
+      [
+        env("TEMPORAL_UI_URL", ""),
+        "http://automata-temporal-web:8088",
+        "http://localhost:8088",
+        "http://localhost:8233"
+      ]
+      |> Enum.reject(&(&1 == ""))
 
     %{
       company_name: Map.get(info, :company_name, env("COMPANY_NAME", "SentientWave")),
       group_name: Map.get(info, :group_name, env("GROUP_NAME", "Core Team")),
       matrix_url: matrix_url,
       automata_url: automata_url,
-      temporal_ui_url: temporal_url,
+      temporal_ui_url: temporal_urls |> List.first() |> to_string(),
       matrix_admin_user: Map.get(info, :matrix_admin_user, ""),
       matrix_admin_password: Map.get(info, :matrix_admin_password, ""),
       room_alias: Map.get(info, :room_alias, ""),
@@ -35,12 +46,22 @@ defmodule SentientwaveAutomata.System.Status do
       invite_password: Map.get(info, :invite_password, ""),
       invite_users: env("MATRIX_INVITE_USERS", ""),
       homeserver_domain: env("MATRIX_HOMESERVER_DOMAIN", "localhost"),
+      element_web_url: presence_env("ELEMENT_WEB_URL"),
+      temporal_ui_public_url:
+        presence_env("TEMPORAL_UI_PUBLIC_URL") ||
+          temporal_urls |> List.first() |> to_string(),
       federation: Settings.federation_effective(),
       source: if(map_size(info) > 0, do: "connection-info", else: "env"),
       services: %{
-        automata: service_status(automata_check_url, disable_checks),
-        matrix: service_status(matrix_url, disable_checks),
-        temporal_ui: service_status(temporal_url, disable_checks)
+        # /login is unauthenticated; /api/v1/workflows requires a token and
+        # always reported error:401.
+        automata:
+          service_status(
+            Enum.uniq([add_check_path(automata_url, "/login"), automata_url]),
+            disable_checks
+          ),
+        matrix: service_status(List.wrap(matrix_url), disable_checks),
+        temporal_ui: service_status(temporal_urls, disable_checks)
       }
     }
   end
@@ -84,19 +105,42 @@ defmodule SentientwaveAutomata.System.Status do
     end
   end
 
-  defp service_status(_url, true), do: "skipped"
+  defp service_status(_urls, true), do: "skipped"
 
-  defp service_status(url, false) do
+  # Probes candidate URLs in order and reports the friendliest accurate state:
+  # "ok" if any candidate answers, otherwise "error:<code>" / "unreachable".
+  # Raw transport exceptions are logged, never rendered into the UI.
+  defp service_status(urls, false) when is_list(urls) do
+    urls
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.reduce_while(%{result: "unreachable"}, fn url, acc ->
+      case ping(url) do
+        {:ok, _status} ->
+          {:halt, %{result: "ok"}}
+
+        {:error, {:http, code}} ->
+          # remember the HTTP error but keep probing other candidates
+          {:cont, if(acc.result == "unreachable", do: %{result: "error:#{code}"}, else: acc)}
+
+        {:error, :unreachable} ->
+          Logger.warning("system_status probe failed url=#{url}")
+          {:cont, acc}
+      end
+    end)
+    |> Map.get(:result)
+  end
+
+  defp ping(url) do
     case Req.get(
            url: url,
-           receive_timeout: 200,
-           connect_options: [timeout: 200],
+           receive_timeout: 1_000,
+           connect_options: [timeout: 1_000],
            decode_body: false,
            retry: false
          ) do
-      {:ok, %{status: status}} when status in 200..399 -> "ok"
-      {:ok, %{status: status}} -> "error:#{status}"
-      {:error, reason} -> "unreachable:#{inspect(reason)}"
+      {:ok, %{status: status}} when status in 200..399 -> {:ok, status}
+      {:ok, %{status: status}} -> {:error, {:http, status}}
+      {:error, _reason} -> {:error, :unreachable}
     end
   end
 
@@ -106,4 +150,11 @@ defmodule SentientwaveAutomata.System.Status do
   end
 
   defp env(key, default), do: System.get_env(key, default)
+
+  defp presence_env(key) do
+    case System.get_env(key) do
+      nil -> ""
+      value -> String.trim(value)
+    end
+  end
 end

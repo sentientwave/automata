@@ -52,6 +52,7 @@ defmodule SentientwaveAutomataWeb.Router do
     get "/dashboard", PageController, :dashboard
     get "/onboarding", PageController, :onboarding
     get "/directory/users", PageController, :directory
+    get "/org-chart", PageController, :org_chart
     get "/directory/users/new", PageController, :new_directory_user
     get "/directory/users/:localpart", PageController, :directory_user
     get "/directory/users/:localpart/tasks/new", PageController, :new_directory_task
@@ -80,7 +81,10 @@ defmodule SentientwaveAutomataWeb.Router do
     post "/settings/llm/providers/:id/default", PageController, :set_default_llm_provider
     delete "/settings/llm/providers/:id", PageController, :delete_llm_provider
     post "/directory/users", PageController, :create_directory_user
+    post "/org-chart/hire", PageController, :hire_org_agent
     post "/directory/users/:localpart", PageController, :update_directory_user
+    post "/org-chart/:localpart/fire", PageController, :fire_org_agent
+    post "/org-chart/:localpart", PageController, :update_org_agent
 
     post "/directory/users/:localpart/rotate-password",
          PageController,
@@ -118,6 +122,7 @@ defmodule SentientwaveAutomataWeb.Router do
          :rollback_skill_designation
 
     post "/settings/tools", PageController, :create_tool
+    post "/settings/tools/:id/role-grants", PageController, :update_tool_role_grants
     post "/settings/tools/:id", PageController, :update_tool
     delete "/settings/tools/:id", PageController, :delete_tool
   end
@@ -128,6 +133,8 @@ defmodule SentientwaveAutomataWeb.Router do
     post "/workflows", WorkflowController, :create
     get "/workflows", WorkflowController, :index
     post "/mentions", MentionsController, :create
+    get "/org-jobs", OrgJobsController, :index
+    get "/org-jobs/:job_id", OrgJobsController, :show
   end
 
   scope "/api/v1", SentientwaveAutomataWeb.API do

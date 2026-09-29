@@ -23,23 +23,37 @@ defmodule SentientwaveAutomata.Agents.Durable do
              workflow_id: workflow_id,
              status: :queued,
              metadata: run_metadata
-           }),
-         {:ok, temporal} <-
-           temporal_adapter().start_agent_run(%{
-             workflow_id: workflow_id,
-             run_id: run.id,
-             attrs: attrs
-           }),
-         {:ok, updated_run} <-
-           Agents.update_run(run, %{
-             temporal_run_id: temporal.run_id,
-             status: :running,
-             metadata: Map.put(run_metadata, "temporal_source", "temporal_sdk")
            }) do
-      {:ok, updated_run}
+      start_temporal_run(run, attrs, workflow_id, run_metadata)
     else
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # B13: without compensation the run row would sit in :queued forever (no
+  # workflow behind it) whenever the Temporal start fails.
+  defp start_temporal_run(run, attrs, workflow_id, run_metadata) do
+    case temporal_adapter().start_agent_run(%{
+           workflow_id: workflow_id,
+           run_id: run.id,
+           attrs: attrs
+         }) do
+      {:ok, temporal} ->
+        Agents.update_run(run, %{
+          temporal_run_id: temporal.run_id,
+          status: :running,
+          metadata: Map.put(run_metadata, "temporal_source", "temporal_sdk")
+        })
+
+      {:error, reason} = error ->
+        _ =
+          Agents.update_run(run, %{
+            status: :failed,
+            error: %{"reason" => inspect(reason), "stage" => "temporal_start"}
+          })
+
+        error
     end
   end
 

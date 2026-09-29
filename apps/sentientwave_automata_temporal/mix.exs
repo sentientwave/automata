@@ -29,7 +29,11 @@ defmodule SentientwaveAutomataTemporal.MixProject do
   defp deps do
     [
       {:sentientwave_automata, in_umbrella: true},
-      {:temporal_sdk, "~> 0.1.17"}
+      {:temporal_sdk, "~> 0.2.0"},
+      # temporal_sdk 0.2.x pins gun ~> 2.2.0, but several gun 2.2.x
+      # advisories (DoS in the HTTP/1.1 response path) are only fixed in
+      # newer 2.x releases; force the latest 2.x.
+      {:gun, ">= 2.2.0 and < 3.0.0", override: true}
     ]
   end
 end

@@ -26,11 +26,17 @@ defmodule SentientwaveAutomata.Agents.ScheduledTaskWorkflow do
       task_state["enabled"] != true ->
         %{status: "stopped", reason: "disabled"}
 
+      # A nil next_run_at would produce a zero-duration timer and an infinite
+      # hot loop (execute -> stale claim -> reload -> fire immediately).
+      # Stop instead; the reconciler restarts the workflow when a schedule exists.
+      is_nil(task_state["next_run_at"]) ->
+        %{status: "stopped", reason: "unscheduled"}
+
       true ->
         wait_ms = Map.get(task_state, "wait_ms", 0)
         timer = start_timer(wait_ms)
 
-        case wait_one([
+        case wait_any([
                timer,
                {:signal_request, @refresh_signal},
                {:signal_request, @stop_signal}

@@ -62,6 +62,27 @@ defmodule SentientwaveAutomata.Agents.Runtime do
     current_constitution_snapshot(constitution_source_module())
   end
 
+  # Like current_constitution_snapshot/0 but propagates storage errors instead
+  # of swallowing them into nil. Used by the law guard to distinguish
+  # "no constitution published" (allow) from "constitution unavailable"
+  # (must fail closed).
+  @spec current_constitution_snapshot!() :: map() | nil
+  def current_constitution_snapshot! do
+    source_module = constitution_source_module()
+
+    cond do
+      function_exported?(source_module, :current_constitution_snapshot, 0) ->
+        source_module.current_constitution_snapshot() |> normalize_constitution_snapshot()
+
+      function_exported?(source_module, :list_active_laws_for_prompt, 0) ->
+        source_module.list_active_laws_for_prompt()
+        |> build_snapshot_from_laws()
+
+      true ->
+        nil
+    end
+  end
+
   @spec constitution_snapshot_reference(map() | nil) :: map() | nil
   def constitution_snapshot_reference(snapshot_or_metadata \\ nil) do
     snapshot =

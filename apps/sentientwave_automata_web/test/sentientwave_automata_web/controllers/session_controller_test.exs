@@ -21,4 +21,24 @@ defmodule SentientwaveAutomataWeb.SessionControllerTest do
     System.delete_env("AUTOMATA_WEB_ADMIN_USER")
     System.delete_env("AUTOMATA_WEB_ADMIN_PASSWORD")
   end
+
+  test "POST /login rejects blank password in production when none configured", %{conn: conn} do
+    Application.put_env(:sentientwave_automata, :environment, :prod)
+    Application.put_env(:sentientwave_automata, :allow_local_fallbacks, false)
+    System.delete_env("AUTOMATA_WEB_ADMIN_PASSWORD")
+    System.put_env("AUTOMATA_WEB_ADMIN_USER", "admin")
+
+    # Fail closed: with no admin password configured, (admin, "") must not
+    # grant access to the console.
+    conn =
+      post(conn, ~p"/login", %{"username" => "admin", "password" => ""})
+
+    assert redirected_to(conn) == "/login"
+  after
+    # restore the test-env defaults (config_env() == :test, no fallbacks)
+    Application.put_env(:sentientwave_automata, :environment, :test)
+    Application.put_env(:sentientwave_automata, :allow_local_fallbacks, false)
+    System.delete_env("AUTOMATA_WEB_ADMIN_PASSWORD")
+    System.delete_env("AUTOMATA_WEB_ADMIN_USER")
+  end
 end

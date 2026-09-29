@@ -52,7 +52,7 @@ defmodule SentientwaveAutomata.Agents do
 
     case get_agent_by_localpart(normalized) do
       nil ->
-        SentientwaveAutomata.Matrix.Directory.list_users()
+        SentientwaveAutomata.Matrix.Directory.list_users_with_passwords()
         |> Enum.find(fn user -> user.localpart == normalized and user.kind == :agent end)
         |> case do
           nil ->
@@ -87,7 +87,45 @@ defmodule SentientwaveAutomata.Agents do
         end
 
       profile ->
+        ensure_wallet_for_profile(profile)
+    end
+  end
+
+  # Backfills the wallet for agent profiles that predate the wallet sync
+  # (e.g. agents created before DirectoryManager started provisioning wallets).
+  defp ensure_wallet_for_profile(%AgentProfile{} = profile) do
+    case get_agent_wallet(profile.id) do
+      %{status: status} when status in ["active", "disabled"] ->
         profile
+
+      _ ->
+        localpart = profile.matrix_localpart || profile.slug
+
+        user =
+          SentientwaveAutomata.Matrix.Directory.list_users_with_passwords()
+          |> Enum.find(fn u -> u.localpart == localpart end)
+
+        case user do
+          %{password: password} when is_binary(password) and password != "" ->
+            _ =
+              upsert_agent_wallet(profile.id, %{
+                kind: "personal",
+                status: "active",
+                matrix_credentials: %{
+                  localpart: user.localpart,
+                  mxid:
+                    "@#{user.localpart}:#{System.get_env("MATRIX_HOMESERVER_DOMAIN", "localhost")}",
+                  password: password,
+                  homeserver_url: System.get_env("MATRIX_URL", "http://localhost:8008")
+                },
+                metadata: %{source: "matrix_directory"}
+              })
+
+            profile
+
+          _ ->
+            profile
+        end
     end
   end
 

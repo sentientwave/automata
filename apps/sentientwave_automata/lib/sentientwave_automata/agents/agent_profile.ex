@@ -12,6 +12,11 @@ defmodule SentientwaveAutomata.Agents.AgentProfile do
     field :matrix_localpart, :string
     field :status, Ecto.Enum, values: [:active, :disabled], default: :active
     field :metadata, :map, default: %{}
+    field :sex, :string
+    field :date_of_birth, :date
+    field :company_description, :string
+    field :job_description, :string
+    field :reports_to, :string
 
     has_many :legacy_skills, SentientwaveAutomata.Agents.LegacySkill, foreign_key: :agent_id
 
@@ -33,7 +38,19 @@ defmodule SentientwaveAutomata.Agents.AgentProfile do
 
   def changeset(profile, attrs) do
     profile
-    |> cast(attrs, [:slug, :kind, :display_name, :matrix_localpart, :status, :metadata])
+    |> cast(attrs, [
+      :slug,
+      :kind,
+      :display_name,
+      :matrix_localpart,
+      :status,
+      :metadata,
+      :sex,
+      :date_of_birth,
+      :company_description,
+      :job_description,
+      :reports_to
+    ])
     |> validate_required([:slug, :kind, :matrix_localpart, :status])
     |> unique_constraint(:slug)
     |> unique_constraint(:matrix_localpart)

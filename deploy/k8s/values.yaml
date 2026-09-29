@@ -86,9 +86,23 @@ postgresql:
     {}
 
 # Matrix Synapse configuration
+elementWeb:
+  enabled: true
+  image:
+    repository: vectorim/element-web
+    tag: "v1.12.23"
+  # URL the user's browser uses to reach the Matrix homeserver (NodePort 30081).
+  homeserverUrl: "http://localhost:30081"
+  tailscale:
+    enabled: true
+    host: automata.example.com
+
 matrix:
   enabled: true
   serverName: matrix.example.com
+  tailscale:
+    enabled: true
+    hostname: automata-matrix.example.com
   registrationEnabled: false
   adminPassword: ""
   signingKey: ""
@@ -117,6 +131,26 @@ matrix:
   resources:
     {}
 
+
+# YugabyteDB cluster (for Temporal storage)
+yugabyte:
+  enabled: false
+  replicas: 3
+  image:
+    repository: yugabytedb/yugabyte
+    tag: "2025.2.5.2-b5-x86_64"
+  ysqlPort: 5433
+  masterRpcPort: 7100
+  tserverRpcPort: 9100
+  hostPath: /var/lib/automata-yugabyte
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
 # Temporal configuration
 temporal:
   enabled: true
@@ -132,6 +166,7 @@ temporal:
       password: postgres
     resources:
       {}
+  useYugabyte: false
   resources:
     {}
 
@@ -154,6 +189,10 @@ env:
   SECRET_KEY_BASE: ""
   DATABASE_URL: ""
   POOL_SIZE: "10"
+
+# Additional environment variables sourced from existing Kubernetes Secrets.
+# Each entry is a Secret name; all its keys are injected as env vars.
+envFromSecrets: []
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious

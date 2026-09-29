@@ -43,4 +43,21 @@ defmodule SentientwaveAutomata.System.StatusTest do
     assert summary.matrix_url == "http://localhost:8008"
     assert summary.governance_room_alias == "governance"
   end
+
+  test "renders service states without leaking exception structs" do
+    status = Status.summary(connection_info_path: "/nonexistent-connection-info")
+
+    Enum.each(status.services, fn {_svc, state} ->
+      refute is_binary(state) and String.contains?(state, "%Req")
+      refute is_binary(state) and String.contains?(state, "%")
+    end)
+
+    assert status.services.automata in ["ok", "unreachable"] or
+             String.starts_with?(status.services.automata, "error:")
+  end
+
+  test "checks can be disabled" do
+    status = Status.summary(connection_info_path: "/nonexistent", disable_checks: true)
+    assert status.services == %{automata: "skipped", matrix: "skipped", temporal_ui: "skipped"}
+  end
 end
