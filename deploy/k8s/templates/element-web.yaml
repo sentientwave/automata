@@ -1,0 +1,153 @@
+{{- if .Values.elementWeb.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "automata.fullname" . }}-element-web-config
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+data:
+  config.json: |
+    {
+      "default_server_config": {
+        "m.homeserver": {
+          "base_url": {{ .Values.elementWeb.homeserverUrl | quote }},
+          "server_name": {{ .Values.matrix.serverName | quote }}
+        }
+      },
+      "disable_custom_urls": false,
+      "disable_guests": true,
+      "brand": "Automata Element"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "automata.fullname" . }}-element-web
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "automata.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: element-web
+  template:
+    metadata:
+      labels:
+        {{- include "automata.labels" . | nindent 8 }}
+        app.kubernetes.io/component: element-web
+    spec:
+      containers:
+        - name: element-web
+          image: "{{ .Values.elementWeb.image.repository }}:{{ .Values.elementWeb.image.tag | default "v1.12.23" }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "automata.fullname" . }}-element-web-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "automata.fullname" . }}-element-web
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "automata.fullname" . }}-element-web-nodeport
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      nodePort: 30084
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "automata.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+{{- end }}
+---
+
+
+{{- if .Values.elementWeb.tailscale.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "automata.fullname" . }}-element-web-tailscale
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: element-web
+spec:
+  ingressClassName: {{ .Values.tailscale.className }}
+  tls:
+    - hosts:
+        - {{ .Values.elementWeb.tailscale.host }}
+  rules:
+    - host: {{ .Values.elementWeb.tailscale.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}-element-web
+                port:
+                  number: 80
+{{- if and .Values.matrix.enabled }}
+          # Two-in-one exposure: serve the Synapse client/admin APIs on the
+          # same hostname as the Element web app.
+          - path: /_matrix
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}-matrix
+                port:
+                  number: 8008
+          - path: /_synapse
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}-matrix
+                port:
+                  number: 8008
+{{- end }}
+{{- end }}

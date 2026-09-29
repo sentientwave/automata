@@ -11,7 +11,8 @@
       <div>
         <h2 class="sw-card-title">Configured Tools</h2>
         <p class="sw-card-copy">
-          Brave search and system tools are available for agent tool-calling flows.
+          Search, Matrix messaging, room management, and system tools are available
+          for agent tool-calling flows and can be mapped to org roles.
         </p>
       </div>
       <a href={~p"/settings/tools/new"} class="sw-btn sw-btn-primary">Add Tool</a>
@@ -25,6 +26,7 @@
             <th>Tool</th>
             <th>Endpoint</th>
             <th>Token</th>
+            <th>Roles</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -40,6 +42,16 @@
               {if tool.base_url in [nil, ""], do: "not configured", else: tool.base_url}
             </td>
             <td>{if tool.api_token in [nil, ""], do: "not set", else: "configured"}</td>
+            <td>
+              <% roles = Map.get(@tool_roles, tool.tool_name, []) %>
+              <%= if roles == [] do %>
+                <span class="sw-pill">default</span>
+              <% else %>
+                <div class="sw-pill-list">
+                  <span :for={role <- roles} class="sw-pill">{role}</span>
+                </div>
+              <% end %>
+            </td>
             <td>
               <span class={["sw-pill", tool.enabled && "is-ok"]}>
                 {if tool.enabled, do: "Enabled", else: "Disabled"}

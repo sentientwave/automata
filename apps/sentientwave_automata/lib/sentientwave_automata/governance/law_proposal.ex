@@ -100,11 +100,32 @@ defmodule SentientwaveAutomata.Governance.LawProposal do
     |> update_change(:proposed_markdown_body, &normalize_body/1)
     |> update_change(:reason, &normalize_body/1)
     |> validate_length(:reference, min: 1, max: 64)
+    |> validate_status_transition()
     |> unique_constraint(:reference)
     |> unique_constraint(:workflow_id)
     |> assoc_constraint(:law)
     |> assoc_constraint(:created_by)
     |> assoc_constraint(:resolved_by)
+  end
+
+  # G9: outcomes are terminal - an internal changeset must not be able to
+  # move a proposal cancelled -> open or approved -> rejected, etc.
+  defp validate_status_transition(changeset) do
+    case fetch_change(changeset, :status) do
+      :error ->
+        changeset
+
+      {:ok, new_status} ->
+        prior = changeset.data.status
+
+        cond do
+          is_nil(prior) or prior == new_status or prior == :open ->
+            changeset
+
+          true ->
+            add_error(changeset, :status, "cannot transition from #{prior} to #{new_status}")
+        end
+    end
   end
 
   defp normalize_slug(nil), do: nil

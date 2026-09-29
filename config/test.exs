@@ -16,7 +16,8 @@ config :sentientwave_automata, SentientwaveAutomata.Repo,
 config :sentientwave_automata, background_workers_enabled: false
 
 config :sentientwave_automata,
-  temporal_adapter: SentientwaveAutomata.TestSupport.TemporalAdapterStub
+  temporal_adapter: SentientwaveAutomata.TestSupport.TemporalAdapterStub,
+  org_ops_require_temporal: false
 
 config :sentientwave_automata_temporal, bootstrap_enabled: false
 

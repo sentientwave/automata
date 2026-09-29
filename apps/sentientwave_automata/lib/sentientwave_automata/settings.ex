@@ -15,6 +15,7 @@ defmodule SentientwaveAutomata.Settings do
   @llm_provider_defaults %{
     "local" => %{model: "local-default", base_url: ""},
     "openai" => %{model: "gpt-5.4", base_url: "https://api.openai.com/v1"},
+    "deepseek" => %{model: "deepseek-v4-pro", base_url: "https://api.deepseek.com/v1"},
     "gemini" => %{
       model: "gemini-3.1-pro-preview",
       base_url: "https://generativelanguage.googleapis.com/v1beta"

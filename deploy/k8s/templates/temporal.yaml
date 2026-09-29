@@ -14,9 +14,6 @@ spec:
     - name: grpc
       port: 7233
       targetPort: 7233
-    - name: web
-      port: 8088
-      targetPort: 8088
 ---
 apiVersion: v1
 kind: Service
@@ -32,7 +29,7 @@ spec:
   ports:
     - name: http
       port: 8088
-      targetPort: 8088
+      targetPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,21 +50,129 @@ spec:
         {{- include "automata.labels" . | nindent 8 }}
         app.kubernetes.io/component: temporal
     spec:
+{{- if .Values.temporal.useYugabyte }}
       containers:
         - name: temporal
           image: "{{ .Values.temporal.image.repository }}:{{ .Values.temporal.image.tag | default "1.26.2" }}"
           imagePullPolicy: IfNotPresent
           env:
-            - name: DB
-              value: postgres12
-            - name: DB_PORT
-              value: "5432"
-            - name: POSTGRES_USER
-              value: {{ .Values.temporal.postgresql.auth.username | default "postgres" | quote }}
-            - name: POSTGRES_PWD
-              value: {{ .Values.temporal.postgresql.auth.password | default "postgres" }}
-            - name: POSTGRES_SEEDS
-              value: {{ include "automata.fullname" . }}-temporal-postgres
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /etc/temporal/config
+              cat > /etc/temporal/config/development.yaml << 'YAML'
+              persistence:
+                defaultStore: default
+                visibilityStore: visibility
+                numHistoryShards: 1
+                datastores:
+                  default:
+                    sql:
+                      pluginName: postgres12_pgx
+                      databaseName: temporal
+                      connectProtocol: tcp
+                      connectAddr: {{ include "automata.fullname" . }}-yugabyte:{{ .Values.yugabyte.ysqlPort }}
+                      user: yugabyte
+                      password: yugabyte
+                      # Smaller pool: every ysql connection spawns a postgres
+                      # backend (~12MB) inside the YB pod cgroup.
+                      maxConns: 10
+                      maxIdleConns: 5
+                  visibility:
+                    sql:
+                      pluginName: postgres12_pgx
+                      databaseName: temporal_visibility
+                      connectProtocol: tcp
+                      connectAddr: {{ include "automata.fullname" . }}-yugabyte:{{ .Values.yugabyte.ysqlPort }}
+                      user: yugabyte
+                      password: yugabyte
+                      # Smaller pool: every ysql connection spawns a postgres
+                      # backend (~12MB) inside the YB pod cgroup.
+                      maxConns: 10
+                      maxIdleConns: 5
+              global:
+                membership:
+                  name: temporal
+                  maxJoinDuration: 30s
+                  broadcastAddress: $(POD_IP)
+              services:
+                frontend:
+                  rpc:
+                    grpcPort: 7233
+                    httpPort: 7243
+                    membershipPort: 6933
+                    bindOnIP: 0.0.0.0
+                history:
+                  rpc:
+                    grpcPort: 7234
+                    membershipPort: 6934
+                    bindOnIP: 0.0.0.0
+                matching:
+                  rpc:
+                    grpcPort: 7235
+                    membershipPort: 6935
+                    bindOnIP: 0.0.0.0
+                worker:
+                  rpc:
+                    membershipPort: 6936
+                    bindOnIP: 0.0.0.0
+              clusterMetadata:
+                masterClusterName: active
+                currentClusterName: active
+                clusterInformation:
+                  active:
+                    enabled: true
+                    rpcAddress: $(POD_IP):7233
+              YAML
+              echo "Temporal YB config written, starting server..."
+              exec temporal-server start
+          ports:
+            - name: grpc
+              containerPort: 7233
+              protocol: TCP
+            - name: http
+              containerPort: 7243
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- if .Values.temporal.resources }}
+          resources:
+            {{- toYaml .Values.temporal.resources | nindent 10 }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+{{- else }}
+      initContainers:
+        - name: prepare-data
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - mkdir -p /data/temporal && chmod 777 /data/temporal
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: temporal
+          image: "{{ .Values.temporal.image.repository }}:{{ .Values.temporal.image.tag | default "1.26.2" }}"
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - mkdir -p /data/temporal && exec temporal server start-dev --ip 0.0.0.0 --port 7233 --ui-port 8233 --db-filename /data/temporal/temporal.db
           ports:
             - name: grpc
               containerPort: 7233
@@ -90,6 +195,15 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/automata-temporal
+            type: DirectoryOrCreate
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -117,11 +231,11 @@ spec:
           env:
             - name: TEMPORAL_ADDRESS
               value: {{ include "automata.fullname" . }}-temporal:7233
-            - name: TEMPORAL_UI_SERVER_PORT
-              value: "8088"
+            - name: TEMPORAL_UI_PORT
+              value: "8080"
           ports:
             - name: http
-              containerPort: 8088
+              containerPort: 8080
               protocol: TCP
           livenessProbe:
             httpGet:

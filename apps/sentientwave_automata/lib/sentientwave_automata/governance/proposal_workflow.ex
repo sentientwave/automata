@@ -31,7 +31,7 @@ defmodule SentientwaveAutomata.Governance.ProposalWorkflow do
   defp wait_for_resolution(%{"id" => proposal_id, "status" => "open"} = proposal) do
     timer = start_timer(Map.get(proposal, "wait_ms", 0))
 
-    case wait_one([timer, {:signal_request, @vote_signal}, {:signal_request, @resolve_signal}]) do
+    case wait_any([timer, {:signal_request, @vote_signal}, {:signal_request, @resolve_signal}]) do
       [%{state: :fired}, :noevent, :noevent] ->
         activity("resolve_proposal", %{"proposal_id" => proposal_id})
 

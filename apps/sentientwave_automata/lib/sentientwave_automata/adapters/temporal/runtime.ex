@@ -24,7 +24,7 @@ defmodule SentientwaveAutomata.Adapters.Temporal.Runtime do
   @impl true
   def signal_workflow(workflow_id, signal, payload)
       when is_binary(workflow_id) and is_binary(signal) and is_map(payload) do
-    case TemporalSdk.Service.signal_workflow(
+    case TemporalSdk.signal_workflow(
            Temporal.cluster(),
            Temporal.workflow_execution(workflow_id),
            signal,
@@ -73,10 +73,16 @@ defmodule SentientwaveAutomata.Adapters.Temporal.Runtime do
         Map.get(input, "workflow_id") ||
         Temporal.generated_workflow_id(to_string(workflow_module))
 
+    # `opentelemetry: false` — the SDK defaults it to `true` in production builds
+    # and injects a traceparent into the workflow start header. With only
+    # `opentelemetry_api` present (no OpenTelemetry SDK), the no-op tracer's
+    # non-recording span makes temporal_sdk 0.2.20 crash the workflow task
+    # executor at init with `{:badmatch, false}` (`true = otel_span:add_events/2`).
     temporal_opts = [
       namespace: Temporal.namespace(),
       workflow_id: workflow_id,
-      input: [input]
+      input: [input],
+      opentelemetry: false
     ]
 
     case TemporalSdk.start_workflow(

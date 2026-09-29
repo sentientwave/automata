@@ -9,6 +9,13 @@ metadata:
 data:
   homeserver.yaml: |
     server_name: {{ .Values.matrix.serverName }}
+
+    # Private-office deployment: every server user must be searchable in the
+    # user directory (Element "start chat" lookup), even without shared rooms.
+    user_directory:
+      enabled: true
+      search_all_users: true
+      prefer_local_users: true
     pid_file: /homeserver.pid
     web_client: false
     usage_stats: false
@@ -52,6 +59,32 @@ data:
     turn_user_lifetime: 1h
     turn_ignore_tls_verify: false
     picoid_key: {{ .Values.matrix.picoidKey | default (randAlphaNum 32) }}
+    registration_shared_secret: {{ .Values.matrix.registrationSharedSecret | default (randAlphaNum 32) }}
+
+    # Organization-specific overrides: keep automation responsive (mirrors all-in-one bundle)
+    rc_message:
+      per_second: 1000
+      burst_count: 10000
+    rc_registration:
+      per_second: 1000
+      burst_count: 10000
+    rc_login:
+      address:
+        per_second: 1000
+        burst_count: 10000
+      account:
+        per_second: 1000
+        burst_count: 10000
+      failed_attempts:
+        per_second: 1000
+        burst_count: 10000
+    rc_invites:
+      per_second: 1000
+      burst_count: 10000
+    rc_joins:
+      local:
+        per_second: 1000
+        burst_count: 10000
 ---
 apiVersion: v1
 kind: Secret
@@ -199,11 +232,40 @@ spec:
               readOnly: true
       volumes:
         - name: data
-          emptyDir: {}
+          hostPath:
+            path: /var/lib/automata-matrix-data
+            type: DirectoryOrCreate
         - name: config
           configMap:
             name: {{ include "automata.fullname" . }}-matrix-homeserver
         - name: signing-key
           secret:
             secretName: {{ include "automata.fullname" . }}-matrix-signing-key
+{{- end }}
+---
+
+{{- if .Values.matrix.tailscale.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "automata.fullname" . }}-matrix-tailscale
+  labels:
+    {{- include "automata.labels" . | nindent 4 }}
+    app.kubernetes.io/component: matrix-synapse
+spec:
+  ingressClassName: {{ .Values.tailscale.className }}
+  tls:
+    - hosts:
+        - {{ .Values.matrix.tailscale.hostname }}
+  rules:
+    - host: {{ .Values.matrix.tailscale.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "automata.fullname" . }}-matrix
+                port:
+                  number: 8008
 {{- end }}

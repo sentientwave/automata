@@ -16,6 +16,7 @@ spec:
   selector:
     app.kubernetes.io/instance: automata
     app.kubernetes.io/name: automata
+    app.kubernetes.io/component: automata
 ---
 apiVersion: v1
 kind: Service
@@ -70,9 +71,9 @@ spec:
     - name: web
       nodePort: 30083
       port: 8088
-      targetPort: 8088
+      targetPort: 8080
       protocol: TCP
   selector:
-    app.kubernetes.io/component: temporal
+    app.kubernetes.io/component: temporal-web
     app.kubernetes.io/instance: automata
     app.kubernetes.io/name: automata

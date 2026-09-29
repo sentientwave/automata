@@ -451,7 +451,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
                sequence_index: 0,
                status: "ok",
                requester_kind: "person",
-               requester_mxid: "@mio:localhost",
+               requester_mxid: "@requester:localhost",
                room_id: "!room:localhost",
                conversation_scope: "room",
                request_payload: %{"messages" => [%{"role" => "user", "content" => "hello"}]},
@@ -466,7 +466,7 @@ defmodule SentientwaveAutomataWeb.PageControllerTest do
 
     body = html_response(conn, 200)
     assert body =~ "Trace Explorer"
-    assert body =~ "@mio:localhost"
+    assert body =~ "@requester:localhost"
   end
 
   test "GET /observability/llm-traces/:id renders trace detail when authenticated", %{conn: conn} do

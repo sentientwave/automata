@@ -55,11 +55,31 @@ defmodule SentientwaveAutomata.Agents.DeepResearch do
     }
   end
 
+  @coordination_phrases [
+    "send_matrix_message",
+    "direct-message",
+    "direct message",
+    "dm a colleague",
+    "dm them",
+    "message them"
+  ]
+
   @spec should_consider?(String.t(), [map()]) :: boolean()
   def should_consider?(user_input, available_tools)
       when is_binary(user_input) and is_list(available_tools) do
     brave_search_available?(available_tools) and
-      (explicit_request?(user_input) or complexity_candidate?(user_input))
+      (explicit_request?(user_input) or complexity_candidate?(user_input)) and
+      not coordination_request?(user_input)
+  end
+
+  @doc """
+  True when the request is about messaging/coordinating with colleagues via
+  the send_matrix_message tool rather than researching the web.
+  """
+  @spec coordination_request?(String.t()) :: boolean()
+  def coordination_request?(user_input) when is_binary(user_input) do
+    normalized = normalize_input(user_input)
+    Enum.any?(@coordination_phrases, &String.contains?(normalized, &1))
   end
 
   @spec explicit_request?(String.t()) :: boolean()

@@ -44,11 +44,19 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
     end)
   end
 
+  def execute(_context, [%{"step" => "human_pause", "run_id" => run_id, "attrs" => attrs}]) do
+    run = fetch_run!(run_id)
+
+    with_typing_lease(run, attrs, fn ->
+      [%{"paused_ms" => human_pause_delay(attrs)}]
+    end)
+  end
+
   def execute(
         _context,
         [
           %{
-            "step" => "plan_tool_calls",
+            "step" => "decide_participation",
             "run_id" => run_id,
             "attrs" => attrs,
             "context" => workflow_context
@@ -58,8 +66,52 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
     run = fetch_run!(run_id)
 
     with_typing_lease(run, attrs, fn ->
+      [Client.participation_decision(tool_client_opts(run, attrs, workflow_context))]
+    end)
+  end
+
+  def execute(
+        _context,
+        [
+          %{
+            "step" => "assess_continuation",
+            "run_id" => run_id,
+            "attrs" => attrs,
+            "context" => workflow_context,
+            "response" => last_response
+          }
+        ]
+      ) do
+    run = fetch_run!(run_id)
+
+    opts =
+      tool_client_opts(run, attrs, workflow_context)
+      |> Keyword.put(:last_response, last_response)
+
+    with_typing_lease(run, attrs, fn -> [Client.continuation_decision(opts)] end)
+  end
+
+  def execute(
+        _context,
+        [
+          %{
+            "step" => "plan_tool_calls",
+            "run_id" => run_id,
+            "attrs" => attrs,
+            "context" => workflow_context
+          } = payload
+        ]
+      ) do
+    run = fetch_run!(run_id)
+
+    opts =
+      tool_client_opts(run, attrs, workflow_context)
+      |> Keyword.put(:tool_context, Map.get(payload, "tool_context", []))
+      |> Keyword.put(:tool_round, Map.get(payload, "tool_round", 1))
+
+    with_typing_lease(run, attrs, fn ->
       [
-        Client.plan_tool_calls(tool_client_opts(run, attrs, workflow_context))
+        Client.plan_tool_calls(opts)
         |> unwrap_result!("plan tool calls")
         |> then(fn plan -> Map.get(plan, :tool_calls) || Map.get(plan, "tool_calls") || [] end)
       ]
@@ -195,14 +247,16 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
             "attrs" => attrs,
             "context" => workflow_context,
             "response" => response
-          }
+          } = payload
         ]
       ) do
     run = fetch_run!(run_id)
 
     [
       unwrap_result!(
-        LawCompliance.certify_response(run, attrs, workflow_context, response),
+        LawCompliance.certify_response(run, attrs, workflow_context, response,
+          tool_context: Map.get(payload, "tool_context", [])
+        ),
         "certify response"
       )
     ]
@@ -221,10 +275,17 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
       ) do
     run = fetch_run!(run_id)
 
-    :ok =
-      unwrap_result!(Activities.post_response(run, attrs, response), "post response to Matrix")
+    # Posting is best-effort: a permanent Matrix error (e.g. the agent's
+    # account not joined to the room) must not raise and cause an endless
+    # Temporal retry storm — the run result already records the response.
+    case Activities.post_response(run, attrs, response) do
+      :ok ->
+        [%{"posted" => true}]
 
-    [%{"posted" => true}]
+      {:error, reason} ->
+        Logger.warning("post_response_failed run_id=#{run_id} reason=#{inspect(reason)}")
+        [%{"posted" => false, "post_error" => inspect(reason)}]
+    end
   end
 
   def execute(
@@ -242,6 +303,22 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
     run = fetch_run!(run_id)
     :ok = Activities.persist_memory(run, attrs, workflow_context, response)
     [%{"persisted" => true}]
+  end
+
+  def execute(
+        _context,
+        [
+          %{
+            "step" => "consolidate_personal_memory",
+            "run_id" => run_id,
+            "attrs" => attrs,
+            "response" => response
+          }
+        ]
+      ) do
+    run = fetch_run!(run_id)
+    :ok = Activities.consolidate_personal_memory(run, attrs, response)
+    [%{"consolidated" => true}]
   end
 
   def execute(
@@ -271,9 +348,18 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
           "metadata" => metadata
         }
       ]) do
+    # Typing indicators are cosmetic: failures must never fail the activity
+    # and trigger Temporal retries (e.g. 403 when the agent's account is not
+    # joined to the room).
     case set_typing(room_id, typing, metadata) do
-      :ok -> [%{"typing" => typing}]
-      {:error, reason} -> raise "failed to update typing state: #{inspect(reason)}"
+      :ok ->
+        [%{"typing" => typing}]
+
+      {:error, reason} ->
+        # repeats every heartbeat interval while the run is active, so keep
+        # it at debug level to avoid log spam
+        Logger.debug("typing_update_failed room=#{room_id} reason=#{inspect(reason)}")
+        [%{"typing" => typing, "typing_error" => inspect(reason)}]
     end
   end
 
@@ -307,6 +393,9 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
       user_input: fetch_value(input, "body", ""),
       context_text: fetch_value(workflow_context, "context_text", ""),
       room_id: fetch_value(attrs, "room_id", ""),
+      explicitly_mentioned: fetch_value(metadata, "explicitly_mentioned", false),
+      directly_addressed: fetch_value(metadata, "directly_addressed", false),
+      sender_is_agent: fetch_value(metadata, "sender_is_agent", false),
       constitution_snapshot:
         Map.get(run.metadata || %{}, "constitution_snapshot_id") &&
           %{
@@ -540,7 +629,10 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
   defp start_typing_heartbeat(room_id, metadata) do
     parent = self()
 
-    spawn_link(fn ->
+    # Deliberately NOT linked: a crash in the heartbeat must never take down
+    # the activity process mid-LLM-call (that would restart the whole
+    # expensive activity via Temporal retry).
+    spawn(fn ->
       typing_loop(parent, room_id, metadata, typing_interval_ms())
     end)
   end
@@ -559,7 +651,12 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
   end
 
   defp typing_loop(parent, room_id, metadata, interval_ms) do
-    _ = set_typing(room_id, true, metadata)
+    # Typing is cosmetic; any adapter crash here must stay contained.
+    try do
+      _ = set_typing(room_id, true, metadata)
+    rescue
+      _ -> :ok
+    end
 
     receive do
       {:stop, caller, ref} ->
@@ -576,10 +673,90 @@ defmodule SentientwaveAutomata.Agents.WorkflowActivities do
   end
 
   defp set_typing(room_id, typing, metadata) when is_binary(room_id) and room_id != "" do
-    matrix_adapter().set_typing(room_id, typing, typing_timeout_ms(), metadata)
+    case typing_credentials(metadata) do
+      %{} = credentials ->
+        case matrix_adapter().set_typing_as(
+               room_id,
+               typing,
+               typing_timeout_ms(),
+               credentials,
+               metadata
+             ) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            # e.g. the agent's account is not joined to this room — fall
+            # back to the bot connection so the indicator still works.
+            Logger.debug("typing_as_failed room=#{room_id} reason=#{inspect(reason)}")
+
+            matrix_adapter().set_typing(room_id, typing, typing_timeout_ms(), metadata)
+        end
+
+      nil ->
+        matrix_adapter().set_typing(room_id, typing, typing_timeout_ms(), metadata)
+    end
   end
 
   defp set_typing(_room_id, _typing, _metadata), do: :ok
+
+  # Randomized human-paced delay before the first response: applied only in
+  # autonomous group conversations where the agent was not explicitly
+  # mentioned, so replies arrive staggered like a human team's would.
+  # Configurable via AUTOMATA_HUMAN_REPLY_DELAY_MS (0 disables).
+  defp human_pause_delay(attrs) do
+    metadata = fetch_map(attrs, "metadata")
+    autonomy? = Map.get(metadata, "room_autonomy", false) == true
+
+    explicitly_mentioned? =
+      fetch_value(metadata, "explicitly_mentioned", false) in [true, "true", "TRUE", "1", 1]
+
+    directly_addressed? =
+      fetch_value(metadata, "directly_addressed", false) in [true, "true", "TRUE", "1", 1]
+
+    target_count = normalize_target_count(fetch_value(metadata, "dispatch_target_count", 1))
+
+    max_ms = human_reply_delay_ms()
+
+    if max_ms > 0 and autonomy? and not explicitly_mentioned? and not directly_addressed? and
+         target_count > 1 do
+      # Compute only - the workflow awaits the delay with a timer, so no
+      # activity worker slot is blocked sleeping here.
+      delay_ms = :rand.uniform(max_ms)
+      Logger.debug("human_pause run_pause_ms=#{delay_ms}")
+      delay_ms
+    else
+      0
+    end
+  end
+
+  defp normalize_target_count(value) when is_integer(value), do: value
+
+  defp normalize_target_count(value) do
+    String.to_integer(to_string(value))
+  rescue
+    _ -> 1
+  end
+
+  defp human_reply_delay_ms do
+    System.get_env("AUTOMATA_HUMAN_REPLY_DELAY_MS", "12000")
+    |> String.to_integer()
+  rescue
+    _ -> 12_000
+  end
+
+  defp typing_credentials(metadata) when is_map(metadata) do
+    run_id = metadata |> Map.get(:run_id, Map.get(metadata, "run_id"))
+
+    case run_id && Agents.get_run(run_id) do
+      %Run{agent_id: agent_id} -> Activities.agent_post_credentials(agent_id)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp typing_credentials(_metadata), do: nil
 
   defp matrix_adapter do
     Application.get_env(

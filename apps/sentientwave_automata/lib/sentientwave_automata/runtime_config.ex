@@ -12,7 +12,7 @@ defmodule SentientwaveAutomata.RuntimeConfig do
   alias SentientwaveAutomata.Settings.LLMProviderConfig
 
   @unsafe_seed_passwords ["changeme123!", "changeme123", "admin", "password"]
-  @remote_llm_providers ~w(openai gemini anthropic cerebras openrouter)
+  @remote_llm_providers ~w(openai deepseek gemini anthropic cerebras openrouter)
 
   @spec production?() :: boolean()
   def production? do
@@ -132,6 +132,9 @@ defmodule SentientwaveAutomata.RuntimeConfig do
   end
 
   defp missing_provider_key?("openai"), do: blank?(System.get_env("OPENAI_API_KEY", ""))
+
+  defp missing_provider_key?("deepseek"),
+    do: blank?(System.get_env("AUTOMATA_LLM_API_KEY", System.get_env("DEEPSEEK_API_KEY", "")))
 
   defp missing_provider_key?("gemini"),
     do: blank?(System.get_env("GEMINI_API_KEY", System.get_env("GOOGLE_API_KEY", "")))

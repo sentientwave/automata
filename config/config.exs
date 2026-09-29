@@ -27,6 +27,8 @@ default_embedding_provider =
 config :sentientwave_automata,
   ecto_repos: [SentientwaveAutomata.Repo],
   environment: config_env(),
+  # Org ops must dispatch to a Temporal workflow (no inline fallback) in prod.
+  org_ops_require_temporal: config_env() == :prod,
   edition: :community,
   matrix_adapter: default_matrix_adapter,
   temporal_adapter: SentientwaveAutomata.Adapters.Temporal.Runtime,
@@ -49,12 +51,36 @@ else
         client: %{
           adapter:
             {:temporal_sdk_grpc_adapter_gun_pool,
-             [endpoints: [{{127, 0, 0, 1}, 7233}], pool_size: 5]},
-          grpc_opts: [timeout: 2_000],
+             [endpoints: [{{127, 0, 0, 1}, 7233}], pool_size: 15]},
+          grpc_opts: [timeout: 10_000],
           grpc_opts_longpoll: [timeout: 70_000]
         },
-        workflows: [[task_queue: "automata-workflows"]],
-        activities: [[task_queue: "automata-activities"]]
+        workflows: [
+          [
+            task_queue: "automata-workflows",
+            allowed_temporal_names: [
+              "Elixir.SentientwaveAutomata.Agents.Workflow",
+              "Elixir.SentientwaveAutomata.Agents.ScheduledTaskWorkflow",
+              "Elixir.SentientwaveAutomata.Governance.ProposalWorkflow",
+              "Elixir.SentientwaveAutomata.Orchestration.ConversationWorkflow",
+              "Elixir.SentientwaveAutomata.OrgChart.OpsWorkflow",
+              "Elixir.SentientwaveAutomataTemporal.HealthWorkflow"
+            ],
+            task_poller_pool_size: 3
+          ]
+        ],
+        activities: [
+          [
+            task_queue: "automata-activities",
+            allowed_temporal_names: [
+              "Elixir.SentientwaveAutomata.Agents.WorkflowActivities",
+              "Elixir.SentientwaveAutomata.Agents.ScheduledTaskActivities",
+              "Elixir.SentientwaveAutomata.Governance.ProposalActivities",
+              "Elixir.SentientwaveAutomata.Orchestration.Activities"
+            ],
+            task_poller_pool_size: 5
+          ]
+        ]
       ]
     ]
 end

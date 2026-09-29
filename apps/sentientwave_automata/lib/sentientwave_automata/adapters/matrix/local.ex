@@ -25,6 +25,24 @@ defmodule SentientwaveAutomata.Adapters.Matrix.Local do
   end
 
   @impl true
+  def post_message_as(room_id, message, credentials, metadata) do
+    Logger.info(
+      "matrix_local_as room=#{room_id} localpart=#{Map.get(credentials, "localpart")} message=#{message} meta=#{inspect(metadata)}"
+    )
+
+    :ok
+  end
+
+  @impl true
+  def set_typing_as(room_id, typing, timeout_ms, credentials, metadata) do
+    Logger.info(
+      "matrix_local_typing_as room=#{room_id} typing=#{typing} timeout_ms=#{timeout_ms} localpart=#{Map.get(credentials, "localpart")} meta=#{inspect(metadata)}"
+    )
+
+    :ok
+  end
+
+  @impl true
   def ingest_event(%{"type" => "m.room.message", "content" => %{"body" => body}} = event) do
     message = %{
       room_id: Map.get(event, "room_id", ""),

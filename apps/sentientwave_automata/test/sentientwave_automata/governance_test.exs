@@ -82,7 +82,14 @@ defmodule SentientwaveAutomata.GovernanceTest do
       assert results.quorum_met?
       assert results.approval_met?
 
-      assert {:ok, resolved} = Workflow.resolve_proposal(reference)
+      # resolve_proposal is an authorized control-plane action (G6): the test
+      # member acts as the resolver.
+      assert {:ok, resolved} =
+               Workflow.resolve_proposal(%{
+                 "reference" => reference,
+                 "sender_mxid" => "@#{member_localpart}:localhost"
+               })
+
       assert resolved.status == :approved
 
       snapshot = Workflow.current_constitution_snapshot()

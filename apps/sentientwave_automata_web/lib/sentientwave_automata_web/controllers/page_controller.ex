@@ -24,6 +24,7 @@ defmodule SentientwaveAutomataWeb.PageController do
   @provider_options [
     {"Local (Fallback)", "local"},
     {"OpenAI", "openai"},
+    {"DeepSeek", "deepseek"},
     {"Google Gemini", "gemini"},
     {"Anthropic", "anthropic"},
     {"Cerebras", "cerebras"},
@@ -34,7 +35,14 @@ defmodule SentientwaveAutomataWeb.PageController do
   @tool_options [
     {"Brave Internet Search", "brave_search"},
     {"System Directory Admin", "system_directory_admin"},
-    {"Run Shell", "run_shell"}
+    {"Run Shell", "run_shell"},
+    {"Send Matrix Message", "send_matrix_message"},
+    {"Create Matrix Room", "create_matrix_room"},
+    {"Delete Matrix Room", "delete_matrix_room"},
+    {"Create Department", "create_department"},
+    {"Create Team", "create_team"},
+    {"Set Reports To", "set_reports_to"},
+    {"Assign Org Unit", "assign_org_unit"}
   ]
   @scheduled_task_type_options [
     {"Run Agent Prompt", "run_agent_prompt"},
@@ -156,10 +164,17 @@ defmodule SentientwaveAutomataWeb.PageController do
     total_count = Directory.count_users()
     active_filters = active_directory_filters(directory_filters)
 
+    tab = if params["tab"] == "visualization", do: :visualization, else: :table
+
+    org_entries = SentientwaveAutomata.OrgChart.list_org()
+    org_lookup = org_table_lookup(org_entries)
+    layout = if tab == :visualization, do: SentientwaveAutomata.OrgChart.layout(), else: nil
+
     render(conn, :directory,
       status: status,
       admin_user: AdminAuth.expected_username(),
       nav: nav("directory"),
+      tab: tab,
       users: users,
       filtered_count: filtered_count,
       total_count: total_count,
@@ -167,8 +182,43 @@ defmodule SentientwaveAutomataWeb.PageController do
       service_count: Directory.count_users(kind: :service),
       filter_form: directory_filter_form,
       active_filters: active_filters,
-      directory_kind_filter_options: @directory_kind_filter_options
+      directory_kind_filter_options: @directory_kind_filter_options,
+      org_lookup: org_lookup,
+      org_layout_json:
+        (layout && Jason.encode!(layout)) ||
+          Jason.encode!(%{nodes: [], edges: [], width: 0, height: 0}),
+      reports_to_options: reports_to_options(org_entries)
     )
+  end
+
+  defp org_table_lookup(org_entries) do
+    by_localpart = Map.new(org_entries, &{&1.localpart, &1})
+    principals = SentientwaveAutomata.OrgChart.principal_localparts()
+
+    counts =
+      org_entries
+      |> Enum.group_by(& &1.reports_to)
+      |> Map.new(fn {supervisor, reports} -> {supervisor, length(reports)} end)
+
+    Map.new(org_entries, fn entry ->
+      {entry.localpart,
+       %{
+         sex: entry.sex,
+         age: entry.age,
+         reports_to: entry.reports_to,
+         reports_to_name: reports_to_display(entry.reports_to, by_localpart, principals),
+         report_count: Map.get(counts, entry.localpart, 0)
+       }}
+    end)
+  end
+
+  defp reports_to_display(nil, _by_localpart, _principals), do: nil
+
+  defp reports_to_display(localpart, by_localpart, principals) do
+    case Map.get(by_localpart, localpart) do
+      %{display_name: name} -> name
+      nil -> if(localpart in principals, do: "#{localpart} (Principal)", else: localpart)
+    end
   end
 
   def new_directory_user(conn, _params) do
@@ -201,6 +251,10 @@ defmodule SentientwaveAutomataWeb.PageController do
         agent_wallet = agent_profile && Agents.get_agent_wallet(agent_profile.id)
         tool_rows = (agent_profile && agent_tool_rows(agent_profile)) || []
         scheduled_tasks = (agent_profile && Agents.list_scheduled_tasks(agent_profile.id)) || []
+        org_entry = (agent_profile && SentientwaveAutomata.OrgChart.entry(agent_profile)) || nil
+
+        direct_reports =
+          (agent_profile && SentientwaveAutomata.OrgChart.direct_reports(user.localpart)) || []
 
         render(conn, :directory_user,
           status: status,
@@ -209,12 +263,73 @@ defmodule SentientwaveAutomataWeb.PageController do
           user: user,
           agent_profile: agent_profile,
           agent_wallet: agent_wallet,
+          org_entry: org_entry,
+          direct_reports: direct_reports,
           operational_status: DirectoryManager.operational_status(user),
           tool_rows: tool_rows,
           scheduled_tasks: scheduled_tasks,
           directory_kind_options: @directory_kind_options,
           agent_status_options: @agent_status_options
         )
+    end
+  end
+
+  def org_chart(conn, _params) do
+    # The org chart now lives inside the Directory section as a tab.
+    redirect(conn, to: ~p"/directory/users?tab=visualization")
+  end
+
+  def hire_org_agent(conn, %{"org" => params}) do
+    case SentientwaveAutomata.OrgChart.hire(clean_org_params(params)) do
+      {:ok, entry} ->
+        conn
+        |> put_flash(
+          :info,
+          "Hired #{entry.display_name} (@#{entry.localpart}) into the org chart."
+        )
+        |> redirect(to: ~p"/directory/users?tab=visualization")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, "Could not hire: #{format_org_error(reason)}")
+        |> redirect(to: ~p"/directory/users?tab=visualization")
+    end
+  end
+
+  def hire_org_agent(conn, _params) do
+    conn
+    |> put_flash(:error, "Invalid hire payload.")
+    |> redirect(to: ~p"/directory/users?tab=visualization")
+  end
+
+  def fire_org_agent(conn, %{"localpart" => localpart}) do
+    case SentientwaveAutomata.OrgChart.fire(localpart) do
+      {:ok, _warnings} ->
+        conn
+        |> put_flash(
+          :info,
+          "Fired @#{localpart}: removed from the org chart, console, and Matrix."
+        )
+        |> redirect(to: ~p"/directory/users?tab=visualization")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, "Could not fire: #{format_org_error(reason)}")
+        |> redirect(to: ~p"/directory/users?tab=visualization")
+    end
+  end
+
+  def update_org_agent(conn, %{"localpart" => localpart, "org" => params}) do
+    case SentientwaveAutomata.OrgChart.update_org_fields(localpart, clean_org_params(params)) do
+      {:ok, entry} ->
+        conn
+        |> put_flash(:info, "Org chart updated for #{entry.display_name}.")
+        |> redirect(to: ~p"/directory/users?tab=visualization")
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, "Could not update org chart: #{format_org_error(reason)}")
+        |> redirect(to: ~p"/directory/users?tab=visualization")
     end
   end
 
@@ -668,9 +783,39 @@ defmodule SentientwaveAutomataWeb.PageController do
           nav: nav("tools"),
           tool_options: @tool_options,
           tools: tools,
-          tool: tool
+          tool: tool,
+          role_grants: SentientwaveAutomata.ToolRoles.roles_for_tool(tool.tool_name),
+          role_options: SentientwaveAutomata.ToolRoles.roles(),
+          role_mapped: SentientwaveAutomata.ToolRoles.role_mapped_tools()
         )
     end
+  end
+
+  def update_tool_role_grants(conn, %{"id" => id, "grants" => grants}) when is_map(grants) do
+    case Settings.get_tool_config(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Tool not found.")
+        |> redirect(to: ~p"/settings/tools")
+
+      tool ->
+        roles =
+          (grants || %{})
+          |> Map.keys()
+          |> Enum.filter(&(&1 in SentientwaveAutomata.ToolRoles.roles()))
+
+        :ok = SentientwaveAutomata.ToolRoles.replace_grants(tool.tool_name, roles)
+
+        conn
+        |> put_flash(:info, "Role mapping updated for #{tool.name}.")
+        |> redirect(to: ~p"/settings/tools/#{tool.id}")
+    end
+  end
+
+  def update_tool_role_grants(conn, _params) do
+    conn
+    |> put_flash(:error, "Invalid role grant payload.")
+    |> redirect(to: ~p"/settings/tools")
   end
 
   def llm_traces(conn, params) do
@@ -1282,13 +1427,19 @@ defmodule SentientwaveAutomataWeb.PageController do
   defp render_tools(conn) do
     status = Status.summary()
     tools = Settings.list_tool_configs()
+    grants = SentientwaveAutomata.ToolRoles.list_grants()
+
+    tool_roles =
+      grants
+      |> Enum.group_by(& &1.tool_name, & &1.role)
 
     render(conn, :tools,
       status: status,
       admin_user: AdminAuth.expected_username(),
       nav: nav("tools"),
       tool_options: @tool_options,
-      tools: tools
+      tools: tools,
+      tool_roles: tool_roles
     )
   end
 
@@ -1437,6 +1588,44 @@ defmodule SentientwaveAutomataWeb.PageController do
     end)
     |> Enum.reverse()
   end
+
+  defp reports_to_options(entries) do
+    principals =
+      SentientwaveAutomata.OrgChart.principal_localparts()
+      |> Enum.map(&{"#{&1} (Principal)", &1})
+
+    (principals ++ Enum.map(entries, &{&1.display_name, &1.localpart}))
+    |> Enum.uniq_by(fn {_label, value} -> value end)
+  end
+
+  defp clean_org_params(params) do
+    params
+    |> Enum.map(fn {k, v} -> {k, blank_to_nil(v)} end)
+    |> Map.new()
+  end
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp blank_to_nil(value), do: value
+
+  defp format_org_error(%Ecto.Changeset{} = changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {message, _opts} -> message end)
+    |> Enum.map_join(", ", fn {field, [first | _]} -> "#{field}: #{first}" end)
+  end
+
+  defp format_org_error({:unknown_localpart, localpart}), do: "unknown localpart #{localpart}"
+
+  defp format_org_error(:localpart_taken), do: "localpart already taken"
+  defp format_org_error(:missing_localpart), do: "localpart is required"
+  defp format_org_error(:not_found), do: "agent not found"
+
+  defp format_org_error(reason) when is_binary(reason), do: reason
+  defp format_org_error(reason), do: inspect(reason)
 
   defp nav(active) do
     [

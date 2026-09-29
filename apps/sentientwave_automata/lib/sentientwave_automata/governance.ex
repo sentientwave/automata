@@ -1271,10 +1271,13 @@ defmodule SentientwaveAutomata.Governance do
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp generate_reference(prefix) do
+    # Random suffix: System.unique_integer resets on every VM boot, which made
+    # references collide with the unique index after restarts (and the resulting
+    # changeset error retried forever). A rare random collision self-heals: the
+    # activity retry generates a fresh reference.
     suffix =
-      System.unique_integer([:positive])
-      |> Integer.to_string()
-      |> String.pad_leading(6, "0")
+      :crypto.strong_rand_bytes(5)
+      |> Base.encode16(case: :lower)
 
     "#{prefix}-#{suffix}"
   end

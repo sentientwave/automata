@@ -33,6 +33,17 @@ defmodule SentientwaveAutomataWeb.PageHTML do
       model_help: "Recommended current model: gpt-5.4.",
       endpoint_help: "Leave Base URL blank to use the default OpenAI API endpoint."
     },
+    "deepseek" => %{
+      label: "DeepSeek",
+      family: "OpenAI-compatible API",
+      summary: "Use DeepSeek models through the OpenAI-compatible chat completions endpoint.",
+      recommended_model: "deepseek-v4-pro",
+      auth_header: "Authorization: Bearer",
+      token_label: "DeepSeek API Key",
+      token_help: "Paste a DeepSeek API key. Automata sends it as a Bearer token.",
+      model_help: "Recommended current model: deepseek-v4-pro.",
+      endpoint_help: "Leave Base URL blank to use the default DeepSeek API endpoint."
+    },
     "gemini" => %{
       label: "Google Gemini",
       family: "Gemini generateContent API",
@@ -163,15 +174,24 @@ defmodule SentientwaveAutomataWeb.PageHTML do
           </div>
 
           <div class="sw-status-row">
-            <span class={["sw-pill", service_class(@status.services.automata)]}>
-              Automata: {@status.services.automata}
-            </span>
-            <span class={["sw-pill", service_class(@status.services.matrix)]}>
-              Matrix: {@status.services.matrix}
-            </span>
-            <span class={["sw-pill", service_class(@status.services.temporal_ui)]}>
-              Temporal: {@status.services.temporal_ui}
-            </span>
+            <.service_pill
+              label="Automata"
+              state={@status.services.automata}
+              href="/"
+              hint="Open the admin console"
+            />
+            <.service_pill
+              label="Matrix"
+              state={@status.services.matrix}
+              href={@status.element_web_url}
+              hint="Open the Element web app"
+            />
+            <.service_pill
+              label="Temporal"
+              state={@status.services.temporal_ui}
+              href={@status.temporal_ui_public_url}
+              hint="Open the Temporal UI"
+            />
           </div>
         </header>
 
@@ -180,6 +200,33 @@ defmodule SentientwaveAutomataWeb.PageHTML do
         </section>
       </main>
     </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :state, :string, required: true
+  attr :href, :string, default: ""
+  attr :hint, :string, default: ""
+
+  defp service_pill(assigns) do
+    assigns = assign(assigns, :href, String.trim(assigns.href || ""))
+
+    ~H"""
+    <%= if @href != "" do %>
+      <a
+        class={["sw-pill", "sw-pill-link", service_class(@state)]}
+        href={@href}
+        target="_blank"
+        rel="noopener"
+        title={"#{@hint} (#{@state})"}
+      >
+        {@label}: {@state} ↗
+      </a>
+    <% else %>
+      <span class={["sw-pill", service_class(@state)]} title={@state}>
+        {@label}: {@state}
+      </span>
+    <% end %>
     """
   end
 

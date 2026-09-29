@@ -210,8 +210,8 @@ defmodule SentientwaveAutomata.Agents.LLMTraceTest do
                user_input: "Please help me reply",
                context_text: "Room context goes here",
                trace_context: %{
-                 requested_by: "@mio:localhost",
-                 sender_mxid: "@mio:localhost",
+                 requested_by: "@requester:localhost",
+                 sender_mxid: "@requester:localhost",
                  room_id: "!support:localhost",
                  conversation_scope: "room"
                }

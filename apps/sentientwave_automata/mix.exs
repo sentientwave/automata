@@ -38,13 +38,17 @@ defmodule SentientwaveAutomata.MixProject do
     [
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:ecto_sql, "~> 3.13"},
+      {:ecto_sql, "~> 3.14"},
       {:postgrex, ">= 0.0.0"},
       {:pgvector, "~> 0.3.0"},
       {:req, "~> 0.5"},
       {:jason, "~> 1.2"},
       {:tzdata, "~> 1.1"},
-      {:temporal_sdk, "~> 0.1.17"}
+      {:temporal_sdk, "~> 0.2.0"},
+      # temporal_sdk 0.2.x pins gun ~> 2.2.0; several advisories are only
+      # fixed in newer gun 2.x releases, so widen the pin (kept in sync with
+      # the temporal app's override).
+      {:gun, ">= 2.2.0 and < 3.0.0", override: true}
     ]
   end
 

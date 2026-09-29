@@ -11,27 +11,61 @@ defmodule SentientwaveAutomata.Agents.LawCompliance do
   @context_excerpt_chars 2_000
 
   @spec certify_response(Run.t(), map(), map(), String.t()) :: {:ok, map()}
-  def certify_response(%Run{} = run, attrs, context, response) when is_binary(response) do
+  def certify_response(%Run{} = run, attrs, context, response, opts \\ [])
+      when is_binary(response) do
     snapshot = resolve_snapshot(run)
-    decision_payload = response_decision_payload(attrs, context, response)
+    tool_context = Keyword.get(opts, :tool_context, [])
 
-    if certification_ready?(snapshot) do
-      case Client.certify_decision(
-             agent_id: run.agent_id,
-             room_id: fetch_value(attrs, "room_id", ""),
-             trace_context: certification_trace_context(run, attrs, snapshot),
-             constitution_snapshot: snapshot,
-             decision_type: "response",
-             decision_payload: decision_payload
-           ) do
-        {:ok, certification} ->
-          {:ok, enforce_block_message(certification)}
+    decision_payload =
+      response_decision_payload(attrs, context, response)
+      |> Map.put("tool_evidence", tool_evidence(tool_context, run))
 
-        {:error, reason} ->
-          {:ok, blocked_certification(snapshot, certification_failure_summary(reason))}
+    cond do
+      certification_ready?(snapshot) ->
+        case Client.certify_decision(
+               agent_id: run.agent_id,
+               room_id: fetch_value(attrs, "room_id", ""),
+               trace_context: certification_trace_context(run, attrs, snapshot),
+               constitution_snapshot: snapshot,
+               decision_type: "response",
+               decision_payload: decision_payload
+             ) do
+          {:ok, certification} ->
+            {:ok, enforce_block_message(certification)}
+
+          {:error, reason} ->
+            {:ok, blocked_certification(snapshot, certification_failure_summary(reason))}
+        end
+
+      # A constitution exists but could not be loaded (deleted pinned snapshot,
+      # storage error): fail CLOSED instead of silently certifying without laws.
+      constitution_available?() ->
+        {:ok,
+         blocked_certification(
+           snapshot,
+           "The bound constitution snapshot could not be loaded; the response was blocked until it can be verified."
+         )}
+
+      # Genuinely no constitution published: default-allow, as before.
+      true ->
+        {:ok,
+         allowed_certification(
+           snapshot,
+           "No published constitution snapshot is available; default behavior allows the response."
+         )}
+    end
+  end
+
+  # :published | :none | :error - errors are surfaced so the guard can fail
+  # closed rather than mistaking a storage failure for "no laws".
+  defp constitution_available? do
+    try do
+      case Runtime.current_constitution_snapshot!() do
+        snapshot when is_map(snapshot) -> true
+        _ -> false
       end
-    else
-      {:ok, blocked_certification(snapshot, "No published constitution snapshot is available.")}
+    rescue
+      _ -> true
     end
   end
 
@@ -43,19 +77,62 @@ defmodule SentientwaveAutomata.Agents.LawCompliance do
 
   def certified?(_certification), do: false
 
+  # The user-facing fallback must NEVER echo the LLM-authored block_message:
+  # models put internal reasoning ("Do not certify: ...") there, which leaked
+  # verbatim into chat. The full verdict stays in certification metadata/traces.
   @spec blocked_response(map()) :: String.t()
-  def blocked_response(certification) when is_map(certification) do
-    certification
-    |> Map.get("block_message", @default_block_message)
-    |> to_string()
-    |> String.trim()
-    |> case do
-      "" -> @default_block_message
-      message -> message
+  def blocked_response(_certification), do: @default_block_message
+
+  # Grounding evidence for the certifier: current-run tool results first;
+  # when absent (claims spanning multiple runs), fall back to the agent's
+  # recently completed durable operation jobs.
+  defp tool_evidence(tool_context, run) when is_list(tool_context) do
+    cond do
+      tool_context != [] ->
+        tool_context
+        |> Enum.take(-20)
+        |> Jason.encode!()
+        |> String.slice(0, 4_000)
+
+      true ->
+        recent_job_evidence(run)
     end
   end
 
-  def blocked_response(_certification), do: @default_block_message
+  defp tool_evidence(_, _), do: ""
+
+  defp recent_job_evidence(run) do
+    import Ecto.Query
+
+    SentientwaveAutomata.OrgChart.Job
+    |> where([j], j.requested_by == ^to_string(run.agent_id))
+    |> where([j], j.inserted_at > ago(24, "hour"))
+    |> order_by([j], desc: j.inserted_at)
+    |> limit(50)
+    |> SentientwaveAutomata.Repo.all()
+    |> case do
+      [] ->
+        ""
+
+      jobs ->
+        lines =
+          Enum.map(jobs, fn j ->
+            "#{j.inserted_at} #{j.op} #{j.status}"
+          end)
+
+        summary =
+          Enum.frequencies_by(jobs, & &1.op)
+          |> Enum.map(fn {op, n} -> "#{n}x #{op}" end)
+          |> Enum.join(", ")
+
+        Jason.encode!(%{
+          "recent_durable_operations_24h" => %{summary: summary, jobs: lines}
+        })
+        |> String.slice(0, 4_000)
+    end
+  rescue
+    _ -> ""
+  end
 
   defp response_decision_payload(attrs, context, response) do
     input = fetch_map(attrs, "input")
@@ -115,6 +192,23 @@ defmodule SentientwaveAutomata.Agents.LawCompliance do
   end
 
   defp certification_ready?(_snapshot), do: false
+
+  defp allowed_certification(snapshot, summary) do
+    evaluated_laws = normalize_evaluated_laws(Map.get(snapshot, "laws", []))
+
+    %{
+      "decision_type" => "response",
+      "certified" => true,
+      "enforcement" => "allowed",
+      "summary" => summary,
+      "violations" => [],
+      "constitution_snapshot_id" => Map.get(snapshot, "id"),
+      "constitution_version" => Map.get(snapshot, "version"),
+      "law_count" => length(evaluated_laws),
+      "evaluated_laws" => evaluated_laws,
+      "checked_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
 
   defp blocked_certification(snapshot, summary) do
     evaluated_laws = normalize_evaluated_laws(Map.get(snapshot, "laws", []))

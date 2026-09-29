@@ -20,6 +20,13 @@ Enterprise:
 - maintain visibility store
 - keep payload/history limits in check
 - upgrade sequentially by minor version
+- Org-chart control tools **require a live Temporal cluster in production**:
+  every op dispatches a dedicated `OpsWorkflow` and returns a `job_id`
+  continuation (validate the outcome with the `org_job_status` tool). There is
+  **no silent inline fallback** in prod — if Temporal is down, the tool call
+  fails with `TemporalUnavailableError` and the job is marked `failed`. Relax
+  with `AUTOMATA_ORG_OPS_REQUIRE_TEMPORAL=false` only for pilot/dev stacks that
+  intentionally run without Temporal (default `true`).
 
 ## Backups
 - PostgreSQL WAL + PITR
@@ -189,6 +196,11 @@ podman run -d \
 ### Durable Agent Runtime APIs
 - Mention ingress (starts one durable run per mentioned agent):
   - `POST /api/v1/mentions`
+- Org-operation continuations (validate org tool jobs; service-auth):
+  - `GET /api/v1/org-jobs` — list recent org-operation jobs
+  - `GET /api/v1/org-jobs/:job_id` — validate one continuation: returns
+    `status` (`queued`/`running`/`completed`/`failed`) plus `result` (on
+    `completed`) or `error` (on `failed`)
 - Authenticated admin APIs:
   - `GET /api/v1/agent-runs`
   - `GET /api/v1/agent-runs/:id`

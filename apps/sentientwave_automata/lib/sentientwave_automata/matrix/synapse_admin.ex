@@ -37,6 +37,96 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     end
   end
 
+  @doc """
+  Lists localparts of all NON-deactivated users (admin API, paginated).
+  Used by cross-store consistency checks.
+  """
+  @spec list_active_users() :: {:ok, [String.t()]} | {:error, term()}
+  def list_active_users do
+    with {:ok, token} <- admin_token(),
+         {:ok, users} <- fetch_all_users(token) do
+      {:ok,
+       users
+       |> Enum.reject(&Map.get(&1, "deactivated", false))
+       |> Enum.map(&normalize_localpart(Map.get(&1, "name", "")))
+       |> Enum.reject(&(&1 == ""))}
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :list_users_failed}
+    end
+  end
+
+  defp fetch_all_users(token),
+    do: fetch_user_pages(token, "/_synapse/admin/v2/users?limit=500", [])
+
+  defp fetch_user_pages(token, path, acc) do
+    case request(:get, "#{matrix_url()}#{path}", auth_header(token), nil) do
+      {:ok, 200, body} ->
+        data = Jason.decode!(body)
+        acc = acc ++ Map.get(data, "users", [])
+
+        case data["next_token"] do
+          nil -> {:ok, acc}
+          next -> fetch_user_pages(token, "#{path}&from=#{next}", acc)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+
+      _ ->
+        {:error, :list_users_failed}
+    end
+  end
+
+  @doc """
+  Reactivates a previously deactivated account and sets a new password.
+  Returns {:ok, password} with the generated credential.
+  """
+  @spec reactivate_user(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def reactivate_user(localpart) when is_binary(localpart) do
+    mxid = "@#{normalize_localpart(localpart)}:#{matrix_domain()}"
+    encoded_mxid = URI.encode_www_form(mxid)
+    base = matrix_url()
+    password = "sw-" <> Base.encode16(:crypto.strong_rand_bytes(9), case: :lower)
+
+    with {:ok, token} <- admin_token(),
+         {:ok, code, _body} <-
+           request(
+             :put,
+             "#{base}/_synapse/admin/v2/users/#{encoded_mxid}",
+             auth_header(token),
+             %{"deactivated" => false, "password" => password}
+           ),
+         true <- code in 200..299 do
+      {:ok, password}
+    else
+      false -> {:error, :reactivate_http_error}
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :reactivate_failed}
+    end
+  end
+
+  @doc "True when the account exists and is not deactivated."
+  @spec user_active?(String.t()) :: boolean() | false
+  def user_active?(localpart) when is_binary(localpart) do
+    mxid = "@#{normalize_localpart(localpart)}:#{matrix_domain()}"
+    encoded = URI.encode_www_form(mxid)
+
+    with {:ok, token} <- admin_token(),
+         {:ok, 200, body} <-
+           request(
+             :get,
+             "#{matrix_url()}/_synapse/admin/v2/users/#{encoded}",
+             auth_header(token),
+             nil
+           ),
+         %{"deactivated" => deactivated} <- Jason.decode!(body) do
+      deactivated == false
+    else
+      _ -> false
+    end
+  end
+
   @spec deactivate_user(String.t()) :: :ok | {:error, term()}
   def deactivate_user(localpart) when is_binary(localpart) do
     mxid = "@#{normalize_localpart(localpart)}:#{matrix_domain()}"
@@ -80,6 +170,69 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
         {:error, reason}
     end
   end
+
+  @doc """
+  Establishes membership for `participants` in `room_id` on behalf of the
+  room creator: each participant is invited by the creator (who is already in
+  the room) and then joined with the participant's own credentials.
+
+  Used for agent-created direct-message rooms, where the office reader and
+  the message recipient must both be members for polling and replies to work.
+  """
+  @spec establish_direct_room_membership(String.t(), String.t(), [String.t()]) ::
+          :ok | {:error, term()}
+  def establish_direct_room_membership(creator_localpart, room_id, participants)
+      when is_binary(creator_localpart) and is_binary(room_id) and is_list(participants) do
+    with {:ok, creator_token, _creator_mxid} <-
+           login_user(creator_localpart, directory_password(creator_localpart)) do
+      Enum.reduce_while(participants, :ok, fn localpart, :ok ->
+        case invite_and_join(creator_token, room_id, localpart) do
+          :ok -> {:cont, :ok}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+    end
+  end
+
+  defp invite_and_join(creator_token, room_id, localpart) do
+    normalized = normalize_localpart(localpart)
+    mxid = "@#{normalized}:#{matrix_domain()}"
+
+    with :ok <- invite_user_to_room(creator_token, room_id, mxid),
+         {:ok, user_token, _mxid} <- login_user(normalized, directory_password(normalized)),
+         :ok <- join_room_by_id(user_token, room_id) do
+      :ok
+    else
+      {:error, {:invite_http_error, 403, _body}} ->
+        {:error, :creator_not_in_room}
+
+      {:error, {:user_login_failed, 429, body}} ->
+        backoff_invite_poll(normalized, body)
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Deletes a room via the homeserver admin API (force purge). Requires the
+  admin credentials; callers are expected to gate access by role.
+  """
+  @spec delete_room(String.t()) :: :ok | {:error, term()}
+  def delete_room(room_id) when is_binary(room_id) and room_id != "" do
+    with {:ok, token} <- admin_token() do
+      url = "#{matrix_url()}/_synapse/admin/v1/rooms/#{URI.encode_www_form(room_id)}"
+
+      case request(:delete, url, auth_header(token), %{"purge" => true, "force_purge" => true}) do
+        {:ok, code, _body} when code in 200..299 -> :ok
+        {:ok, code, body} -> {:error, {:delete_room_http_error, code, body}}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  def delete_room(_room_id), do: {:error, :invalid_room_id}
 
   @spec reconcile_operator_invites() :: :ok | {:error, term()}
   def reconcile_operator_invites do
@@ -301,10 +454,22 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
            auth_header(token),
            %{"user_id" => user_mxid}
          ) do
-      {:ok, code, _body} when code in [200, 201] -> :ok
-      {:ok, 409, _body} -> :ok
-      {:ok, code, body} -> {:error, {:invite_http_error, code, body}}
-      {:error, reason} -> {:error, reason}
+      {:ok, code, _body} when code in [200, 201] ->
+        :ok
+
+      {:ok, 409, _body} ->
+        :ok
+
+      # Already in the room: nothing to do (synapse replies 403 for invites
+      # to existing members in some configurations).
+      {:ok, 403, body} ->
+        if already_in_room?(body), do: :ok, else: {:error, {:invite_http_error, 403, body}}
+
+      {:ok, code, body} ->
+        {:error, {:invite_http_error, code, body}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -575,11 +740,27 @@ defmodule SentientwaveAutomata.Matrix.SynapseAdmin do
     end
   end
 
-  defp matrix_url, do: System.get_env("MATRIX_URL", "http://localhost:8008")
+  defp matrix_url do
+    # In cluster deployments the homeserver is a sibling service; fall back
+    # to the in-cluster DNS name before localhost so consistency heals work
+    # from the core pod.
+    System.get_env("MATRIX_URL") ||
+      System.get_env("AUTOMATA_MATRIX_SERVICE_URL") ||
+      "http://automata-matrix:8008"
+  end
+
   defp matrix_domain, do: System.get_env("MATRIX_HOMESERVER_DOMAIN", "localhost")
   defp matrix_agent_user, do: System.get_env("MATRIX_AGENT_USER", "automata")
   defp matrix_agent_password, do: System.get_env("MATRIX_AGENT_PASSWORD", "changeme123")
-  defp normalize_localpart(localpart), do: localpart |> String.trim() |> String.trim_leading("@")
+
+  defp normalize_localpart(localpart) do
+    localpart
+    |> String.trim()
+    |> String.trim_leading("@")
+    |> String.split(":", parts: 2)
+    |> List.first()
+    |> String.downcase()
+  end
 
   defp reconcile_update_existing_users?,
     do:

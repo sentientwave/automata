@@ -175,6 +175,7 @@ defmodule SentientwaveAutomata.DirectoryManager do
                merge_metadata(profile_metadata(existing_profile), %{
                  "source" => "directory_manager"
                })
+               |> merge_metadata(user.metadata || %{})
            }),
          {:ok, _wallet} <- upsert_wallet(profile.id, user, existing_profile) do
       :ok

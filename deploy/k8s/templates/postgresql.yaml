@@ -37,6 +37,8 @@ spec:
               value: {{ $pgUser | quote }}
             - name: POSTGRES_PASSWORD
               value: {{ $pgPass }}
+            - name: POSTGRES_DB
+              value: automata
             - name: PGDATA
               value: /var/lib/postgresql/data
           securityContext:
@@ -80,7 +82,9 @@ spec:
                     psql -U {{ $pgUser }} -c "CREATE DATABASE automata;" 2>/dev/null || true
       volumes:
         - name: data
-          emptyDir: {}
+          hostPath:
+            path: /var/lib/automata-core-pg-data
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -100,6 +104,7 @@ spec:
     {{- include "automata.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: postgresql
 {{- end }}
+---
 
 {{- if .Values.matrix.enabled }}
 {{- $matrixPgRepo := .Values.matrix.postgresql.image.repository | default "postgres" }}
@@ -183,7 +188,9 @@ spec:
                       psql -U {{ .Values.matrix.postgresql.auth.username | default "postgres" }} -c "CREATE DATABASE synapse WITH LC_COLLATE='C' LC_CTYPE='C' TEMPLATE=template0;"
       volumes:
         - name: data
-          emptyDir: {}
+          hostPath:
+            path: /var/lib/automata-matrix-pg-data
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -203,8 +210,9 @@ spec:
     {{- include "automata.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: matrix-postgresql
 {{- end }}
+---
 
-{{- if .Values.temporal.enabled }}
+{{- if and .Values.temporal.enabled .Values.temporal.postgresql.enabled }}
 {{- $temporalPgRepo := .Values.temporal.postgresql.image.repository | default "postgres" }}
 {{- $temporalPgTag := .Values.temporal.postgresql.image.tag | default "16" }}
 

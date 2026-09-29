@@ -5,6 +5,42 @@ This is a web application written using the Phoenix web framework.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
+### Org-Chart Tools → Dedicated Temporal Workflows (Mandatory)
+
+**Every agent tool** (`hire_agent`, `fire_agent`, `create/destroy_department`,
+`create/destroy_team`, `set_reports_to`, `assign_org_unit`,
+`create/delete_matrix_room`, `send_matrix_message`, `search_org_chart`,
+`org_job_status`, `system_directory_admin`, `brave_search`, `run_shell`)
+**must not access data directly**. Each dispatches a dedicated durable
+`SentientwaveAutomata.OrgChart.OpsWorkflow` Temporal workflow via
+`SentientwaveAutomata.OrgChart.Ops.start/3`, tracked by an `OrgChart.Job`
+row (`org_operation_jobs` table):
+
+- The tool returns immediately with a **continuation**:
+  `{"status":"queued", "job_id": <workflow_id>}`. The `job_id` is the
+  deterministic Temporal workflow id (idempotency key = op + args + requester),
+  so a redelivered call reuses the same execution.
+- The continuation is validated **after the fact via the API**:
+  `GET /api/v1/org-jobs/:job_id` (service-auth) returns `status`
+  (`queued`/`running`/`completed`/`failed`) plus `result` (on `completed`) or
+  `error` (on `failed`); `GET /api/v1/org-jobs` lists recent jobs. Agents use
+  the `org_job_status` tool, which reads the same `OrgChart.Job` row.
+- Dispatch is **mandatory in production**: when Temporal is unavailable,
+  `Ops.start/3` fails the job row and raises
+  `SentientwaveAutomata.OrgChart.TemporalUnavailableError` (no silent inline
+  data mutation). The inline fallback (`"via":"inline"`) is only for dev/test
+  or when `:org_ops_require_temporal` is `false`.
+- Freshness-first ops (`search_org_chart`, `org_job_status`,
+  `system_directory_admin`, `brave_search`, `run_shell`) get a unique workflow
+  id per call (no idempotency reuse) so reads/status checks/shell commands see
+  current state; mutation ops keep deterministic ids for redelivery safety.
+  These read/external tools default to `wait: true` so the LLM gets the answer
+  inline; `"wait": false` returns the `job_id` continuation immediately.
+- Tool→role grants live in `tool_role_grants` (`ToolRoles`); per-agent grants
+  override the role mapping in `agent_tool_permissions`. Privileged tools
+  (`system_directory_admin`, `run_shell`, `hire_agent`, `fire_agent`) are
+  default-deny and need an explicit `allowed: true` row.
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content

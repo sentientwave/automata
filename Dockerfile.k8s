@@ -1,7 +1,7 @@
-FROM hexpm/elixir:1.19.0-erlang-28.0-debian-bookworm-20250610-slim
+FROM hexpm/elixir:1.19.5-erlang-28.0.4-debian-bookworm-20260803-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  build-essential git curl ca-certificates && \
+  build-essential git curl ca-certificates nodejs npm && \
   apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,7 +14,14 @@ COPY config ./config
 # Install dependencies
 RUN mix local.hex --force && \
     mix local.rebar --force && \
-    mix deps.get
+    mix deps.get && \
+    MIX_ENV=prod mix compile
+
+# Build frontend assets (dashboard UI) and digest them for production
+WORKDIR /app/apps/sentientwave_automata_web
+RUN mix deps.get && MIX_ENV=prod mix assets.setup && MIX_ENV=prod mix assets.build
+WORKDIR /app
+RUN MIX_ENV=prod mix phx.digest
 
 # Default environment
 ENV MIX_ENV=prod \

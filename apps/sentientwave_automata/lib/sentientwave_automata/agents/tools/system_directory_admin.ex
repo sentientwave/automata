@@ -42,7 +42,19 @@ defmodule SentientwaveAutomata.Agents.Tools.SystemDirectoryAdmin do
   end
 
   @impl true
-  def call(args, _opts \\ []) when is_map(args) do
+  def call(args, opts \\ []) when is_map(args) do
+    args = if Map.has_key?(args, "wait"), do: args, else: Map.put(args, "wait", true)
+
+    SentientwaveAutomata.Agents.Tools.OpsJob.dispatch(
+      "system_directory_admin",
+      args,
+      opts,
+      :directory_failed
+    )
+  end
+
+  @doc "Direct (non-Temporal) execution used by org-ops activities and tests."
+  def execute_direct(args, _opts \\ []) when is_map(args) do
     action = args |> Map.get("action", "") |> to_string() |> String.trim()
 
     case action do

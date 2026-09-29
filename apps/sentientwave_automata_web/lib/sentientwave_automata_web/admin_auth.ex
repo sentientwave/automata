@@ -50,7 +50,22 @@ defmodule SentientwaveAutomataWeb.AdminAuth do
   end
 
   @spec valid_credentials?(String.t() | nil, String.t() | nil) :: boolean()
-  def valid_credentials?(username, password), do: authenticate(username, password)
+  def valid_credentials?(username, password) do
+    # Fail closed: a production console with no admin password configured
+    # would otherwise accept (expected_username, "") — any visitor could log
+    # in blank. Local-fallback deployments (dev/test, or prod with
+    # AUTOMATA_ALLOW_LOCAL_FALLBACKS) keep the lenient behavior.
+    if locked_out?() do
+      false
+    else
+      authenticate(username, password)
+    end
+  end
+
+  defp locked_out? do
+    expected_password() == "" and
+      RuntimeConfig.production?() and not RuntimeConfig.allow_local_fallbacks?()
+  end
 
   @spec configured_password?() :: boolean()
   def configured_password? do

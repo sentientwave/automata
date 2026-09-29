@@ -24,7 +24,11 @@ defmodule SentientwaveAutomata.Orchestration.Activities do
       case matrix_adapter().post_message(room_id, "Workflow started: #{objective}", %{
              "workflow_id" => workflow_id,
              "requested_by" => requested_by,
-             "kind" => "conversation_workflow_started"
+             "kind" => "conversation_workflow_started",
+             # Deterministic per workflow: a Temporal activity retry after a
+             # lost response reuses the same Matrix txn id, so the homeserver
+             # dedupes instead of posting a second "Workflow started" event.
+             "txn_id" => "wf_started_" <> workflow_id
            }) do
         :ok ->
           [%{"posted" => true, "room_id" => room_id}]
@@ -117,15 +121,32 @@ defmodule SentientwaveAutomata.Orchestration.Activities do
     Map.get(map, key) || (atom_key && Map.get(map, atom_key))
   end
 
-  defp normalize_status(status) when is_atom(status), do: status
+  @workflow_statuses Ecto.Enum.values(Workflow, :status)
 
+  defp normalize_status(status) when is_atom(status) do
+    if status in @workflow_statuses do
+      status
+    else
+      fail_non_retryable(
+        "orchestration.workflow.invalid_status",
+        "unknown workflow status: #{inspect(status)}"
+      )
+    end
+  end
+
+  # Unknown strings must NOT silently coerce to :running - "complete"/"done"
+  # would flip a finished workflow back to running.
   defp normalize_status(status) when is_binary(status) do
-    case String.trim(status) do
-      "running" -> :running
-      "succeeded" -> :succeeded
-      "failed" -> :failed
-      "cancelled" -> :cancelled
-      _ -> :running
+    trimmed = String.trim(status)
+
+    if trimmed in Enum.map(@workflow_statuses, &Atom.to_string/1) do
+      # Safe: only converts strings that are known status names.
+      String.to_existing_atom(trimmed)
+    else
+      fail_non_retryable(
+        "orchestration.workflow.invalid_status",
+        "unknown workflow status: #{inspect(status)}"
+      )
     end
   end
 
